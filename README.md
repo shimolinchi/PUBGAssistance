@@ -40,6 +40,11 @@
 ```bash
 pip install pynput
 ```
+### 打包
+
+```bash
+nuitka --onefile --plugin-enable=tk-inter --windows-disable-console --windows-icon-from-ico=icon.ico main.py
+```
 ## 快速启动 (Quick Start)
 
 1. 将项目文件（`main.py`）克隆或下载到本地。
