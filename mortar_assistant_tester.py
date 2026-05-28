@@ -1,10 +1,9 @@
 import tkinter as tk
 import mss
 
-# 导入真正的物理传感器与解算模块
 from minimap_radar import MinimapRadarModule
 from elevation_radar import ElevationRadarModule
-from mortar_assistance import MortarAssistance
+from mortar_assistant import MortarAssistant
 
 # ================= 传感器区域配置 =================
 ELEV_START_Y    = 0.11   # 从 11% 开始
@@ -36,7 +35,7 @@ class RealMortarTester:
         self.elevation.monitor = self._calc_rect(ELEV_START_X, ELEV_END_X, ELEV_START_Y, ELEV_END_Y)
         
         # 实例化火控 HUD 模块
-        self.mortar = MortarAssistance(self.root, self.sw, self.sh, self.minimap, self.elevation, fps=30)
+        self.mortar = MortarAssistant(self.root, self.sw, self.sh, self.minimap, self.elevation, fps=30)
 
         # 状态控制
         self.is_running = False

@@ -4,7 +4,7 @@ import numpy as np
 import tkinter as tk
 import ctypes
 
-class MortarAssistance:
+class MortarAssistant:
     """
     迫击炮火控解算与 HUD 显示模块
     只负责计算真实距离，并在右侧屏幕悬浮显示四个标点的火控数据。
@@ -24,7 +24,7 @@ class MortarAssistance:
         self.hud_thread = None
         self.is_fpp = True
         self.a_param = 0.2 
-        self.b_param = 0.45
+        self.b_param = 0.2
         
         # UI 颜色配置 (基础色)
         self.color_map = {
@@ -68,8 +68,8 @@ class MortarAssistance:
     def enable_module(self, enable: bool):
         """主开关：联动传感器启停与 HUD 渲染"""
         self.is_enabled = enable
-        self.minimap.set_enabled(enable)
-        self.elevation.set_enabled(enable)
+        # self.minimap.set_enabled(enable)
+        # self.elevation.set_enabled(enable)
         
         if self.is_enabled and not self._thread_running:
             self._thread_running = True
@@ -114,6 +114,14 @@ class MortarAssistance:
             # 读取最新数据
             mini_dists = self.minimap.get_measured_distance()
             elev_ratios = self.elevation.get_measured_elevations()
+
+            valid_colors_for_elevation = {}
+            for color_name, dist in mini_dists.items():
+                # 距离大于0说明小地图上确实存在这个标点
+                valid_colors_for_elevation[color_name] = (dist > 0.0) 
+            
+            # 把状态推给测高模块
+            self.elevation.set_valid_colors(valid_colors_for_elevation)
             
             # 定位 HUD (右侧，偏下，位于小地图上方区域)
             # 你可以通过修改这两个值来自由调整面板在屏幕上的绝对位置

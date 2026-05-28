@@ -4,7 +4,7 @@ import numpy as np
 import tkinter as tk
 import ctypes
 
-class RocketAssistance:
+class RocketAssistant:
     """
     火箭筒/榴弹发射器 战术标尺辅助模块
     读取小地图距离，通过三次多项式自动拟合数据，在屏幕中心下方渲染动态刻度线。
@@ -21,7 +21,7 @@ class RocketAssistance:
         self.hud_thread = None
         
         self.color_map = {
-            "Yellow": "#FBED21", 
+            "Yellow": "#E3D43C", 
             "Orange": "#B3500D", 
             "Blue": "#1A3EA3", 
             "Green": "#109166"
@@ -79,7 +79,7 @@ class RocketAssistance:
 
     def enable_module(self, enable: bool):
         self.is_enabled = enable
-        self.minimap.set_enabled(enable)
+        # self.minimap.set_enabled(enable)
         
         if self.is_enabled and not self._thread_running:
             self._thread_running = True
@@ -134,6 +134,8 @@ class RocketAssistance:
             c_hex = item["color"]
             ratio = item["ratio"]
             dist = item["distance"]
+            if dist > 160:
+                continue
             
             # 将 0~1 的 ratio 投射到实际的屏幕坐标上
             target_y = self.center_y + (ratio * self.line_length)

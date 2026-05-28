@@ -70,7 +70,7 @@ class TacticalHub:
     def __init__(self, root):
         self.root = root
         self.root.title("PUBG 战术助手")
-        self.root.geometry("250x650")
+        self.root.geometry("250x600")
         self.root.configure(bg="#F9FAFB")
         self.root.attributes("-topmost", True)
 
@@ -94,38 +94,43 @@ class TacticalHub:
         self.crossbow_assist = CrossbowAssistant(self.root, sw, sh, self.minimap, fps=30)
         self.map_assist = MapPointAssistant(self.root)
 
-        # 武器状态武装标志位 (迫击炮默认开启！)
+        # 武器武装状态位 
         self.rocket_armed = False
-        self.mortar_armed = True  
+        self.mortar_armed = True   # 迫击炮默认开启
         self.throwables_armed = False
         self.vss_armed = False
         self.crossbow_armed = False
+        
         self.combat_hud_active = False 
         self.map_assist_active = False
 
-        self.rocket_armed = False
-        self.mortar_armed = True   
-        self.throwables_armed = False
-        self.vss_armed = False
-        self.crossbow_armed = False
-        self.combat_hud_active = False 
-        self.map_assist_active = False
 
         self.pressed_keys = set()
+        
+        # 纯 pynput 的底层物理状态记录
         self.left_pressed = False
         self.middle_pressed = False
-        self._combo_locked = False
+        self.alt_pressed = False
+        
         self.linkage_thread = None
 
-        # 请在这里加上你的 maps 列表和索引（如果你原来定义的名字不一样，请改成你原来的）
-        self.maps = ["艾伦格", "米拉玛", "泰戈", "荣都", "帝斯顿", "维寒迪", "萨诺"] 
+        self.maps = [
+            "艾伦格 (Erangel)", 
+            "米拉玛 (Miramar)", 
+            "泰戈 (Taego)", 
+            "荣都 (Rondo)", 
+            "帝斯顿 (Deston)", 
+            "维寒迪 (Vikendi)"
+        ] 
         self.current_map_index = 0
         self.map_buttons = []
-        self.marker_sizes = [("小", 5), ("中", 8), ("大", 12)]
+        self.current_map_index = 0
+        self.map_buttons = []
+        self.marker_sizes = [("小", "small"), ("中", "medium"), ("大", "large")]
         self.size_buttons = []
         self.assistant_buttons = []
 
-        # 初始化 UI 面板 (务必在实例化探测器之前调用)
+        # 初始化 UI 面板
         self.init_ui()
 
         # ==================== 3. 注册 UI 状态标签与自动探测器 ====================
@@ -133,15 +138,15 @@ class TacticalHub:
         self.lbl_weapon_status = tk.Label(
             self.root, 
             textvariable=self.status_var, 
-            fg="cyan", bg="white", font=("Microsoft YaHei", 12, "bold")
+            fg="#2563EB", bg="#F9FAFB", font=("Microsoft YaHei", 10, "bold")
         )
         self.lbl_weapon_status.pack(pady=10) 
 
         test_templates = {
             "VSS": "templates/vss.png", 
-            "ROCKET": "templates/rocket.png",
-            "CROSSBOW": "templates/crossbow.png",
-            "GRENADE": "templates/grenade.png"
+            "火箭筒": "templates/rocket.png",
+            "十字弩": "templates/crossbow.png",
+            "手榴弹": "templates/grenade.png"
         }
         
         self.weapon_detector = AutoWeaponDetector(
@@ -150,20 +155,17 @@ class TacticalHub:
             templates_config=test_templates, 
             on_switch_callback=self.on_auto_weapon_switch 
         )
-        # 注意：这里千万不要写 .start()，让热键去触发！
 
         self.start_listeners()
 
     def init_ui(self):
         tk.Label(self.root, text="PUBG TACTICAL HUB", bg="#F9FAFB", fg="#111827", font=("Impact", 18)).pack(pady=10)
 
-        # 第一行: 两个校准按键
         f1 = tk.Frame(self.root, bg="#F9FAFB")
         f1.pack(pady=5)
         RoundedButton(f1, 90, 35, 25, "校准大地图", self.map_assist.trigger_calibration).grid(row=0, column=0, padx=10)
         RoundedButton(f1, 90, 35, 25, "校准小地图", self.minimap.trigger_calibration).grid(row=0, column=1, padx=10)
 
-        # 第二、三行: 六个地图选择
         tk.Label(self.root, text="- 地图选择 -", bg="#F9FAFB", fg="#6B7280", font=("Microsoft YaHei", 9)).pack(pady=4)
         f_maps = tk.Frame(self.root, bg="#F9FAFB")
         f_maps.pack()
@@ -176,7 +178,6 @@ class TacticalHub:
             self.map_buttons.append(btn)
         self.select_map(0)
 
-        # 第四行：三个标点尺寸
         tk.Label(self.root, text="- 标点尺寸 -", bg="#F9FAFB", fg="#6B7280", font=("Microsoft YaHei", 9)).pack(pady=4)
         f_sizes = tk.Frame(self.root, bg="#F9FAFB")
         f_sizes.pack()
@@ -187,7 +188,6 @@ class TacticalHub:
             self.size_buttons.append(btn)
         self.select_size(1)
 
-        # ==================== 第五行: 动态助手系统 ====================
         tk.Label(self.root, text="- 瞄准开关 -", bg="#F9FAFB", fg="#6B7280", font=("Microsoft YaHei", 9)).pack(pady=4)
         self.f_assistants = tk.Frame(self.root, bg="#F9FAFB")
         self.f_assistants.pack(pady=2)
@@ -197,27 +197,23 @@ class TacticalHub:
         self.btn_throwables = self.add_assistant_button("启用投掷物", self.toggle_throwables_arm)
         self.btn_vss = self.add_assistant_button("启用 VSS", self.toggle_vss_arm)
         self.btn_crossbow = self.add_assistant_button("启用十字弩", self.toggle_crossbow_arm)
-        # 最下方: 简略描述 
+        
         info_text = (
-            "Shift+Ctrl+Space 或 N : 启停瞄准显示 \n"
+            "Shift+Ctrl+Space 或 N : 启停显示与自动识别 \n"
             "V: 自动瞬爆 | R: 拉环 | Alt +/- : 换图 \n"
             "左键+中键 : 激活地图 | 右键: 关 | Alt+右键 : 留"
         )
         tk.Label(self.root, text=info_text, bg="#F9FAFB", fg="#9CA3AF", justify="center", font=("Microsoft YaHei", 9)).pack(side="bottom", pady=10)
 
-    # === 核心抽象方法：动态注册助手按钮 ===
     def add_assistant_button(self, text, command):
         current_count = len(self.assistant_buttons)
         row = current_count // 2
         col = current_count % 2
-        
         btn = RoundedButton(self.f_assistants, 90, 35, 20, text, command, is_toggle=True)
         btn.grid(row=row, column=col, padx=10, pady=5)
-        
         self.assistant_buttons.append(btn)
         return btn
 
-    # ================= UI 与系统逻辑联动 =================
     def select_map(self, idx):
         self.current_map_idx = idx % len(self.maps)
         for i, btn in enumerate(self.map_buttons):
@@ -230,50 +226,30 @@ class TacticalHub:
         size_key = self.marker_sizes[idx][1]
         self.map_assist.set_marker_size(size_key)
 
-    def toggle_rocket_arm(self):
-        self.rocket_armed = not self.rocket_armed
-        self.sync_combat_hud()
-
-    def toggle_mortar_arm(self):
-        self.mortar_armed = not self.mortar_armed
-        self.sync_combat_hud()
-        
-    def toggle_throwables_arm(self):
-        self.throwables_armed = not self.throwables_armed
-        self.sync_combat_hud()
-
-    def toggle_vss_arm(self):
-        self.vss_armed = not self.vss_armed
-        self.sync_combat_hud()
-    
-    def toggle_crossbow_arm(self):
-        self.crossbow_armed = not self.crossbow_armed
-        self.sync_combat_hud()
+    # 手动点击按钮时的回退机制
+    def toggle_rocket_arm(self): self.rocket_armed = not self.rocket_armed; self.sync_combat_hud()
+    def toggle_mortar_arm(self): self.mortar_armed = not self.mortar_armed; self.sync_combat_hud()
+    def toggle_throwables_arm(self): self.throwables_armed = not self.throwables_armed; self.sync_combat_hud()
+    def toggle_vss_arm(self): self.vss_armed = not self.vss_armed; self.sync_combat_hud()
+    def toggle_crossbow_arm(self): self.crossbow_armed = not self.crossbow_armed; self.sync_combat_hud()
 
     def toggle_main_trigger(self):
-        """全局触发器：按下 N 或 Shift+Ctrl+Space 时调用"""
         self.combat_hud_active = not self.combat_hud_active
-        
         if self.combat_hud_active:
             self.status_var.set("当前状态: 正在识别武器...")
-            self.weapon_detector.start() # 启动后台识别
+            self.weapon_detector.start() 
         else:
             self.status_var.set("当前状态: 未开启显示")
-            self.weapon_detector.stop()  # 停止后台识别
-            
-        # 统一交由同步函数处理 UI 和传感器的启停
+            self.weapon_detector.stop()  
         self.root.after(0, self.sync_combat_hud)
 
     def on_auto_weapon_switch(self, weapon_name):
-        """回调函数：接收后台识别结果"""
         if not self.combat_hud_active:
             return
         self.root.after(0, lambda: self._sync_weapon_ui(weapon_name))
 
     def _sync_weapon_ui(self, weapon_name):
-        """主线程安全更新：处理武装状态与按钮变色"""
-        
-        # 1. 每次识别前，先把所有武装状态重置 (迫击炮永远保持 Armed)
+        # 1. 重置除了迫击炮外的所有状态
         self.vss_armed = False
         self.rocket_armed = False
         self.crossbow_armed = False
@@ -285,69 +261,49 @@ class TacticalHub:
             self.status_var.set("当前状态: 未识别到可用武器")
         else:
             self.status_var.set(f"当前识别: 正在使用 {weapon_name}")
-            
-            if weapon_name == "VSS":
-                self.vss_armed = True
-            elif weapon_name == "ROCKET":
-                self.rocket_armed = True
-            elif weapon_name == "CROSSBOW":
-                self.crossbow_armed = True
-            elif weapon_name == "GRENADE" or weapon_name == "THROWABLES":
-                self.throwables_armed = True
+            if weapon_name == "VSS": self.vss_armed = True
+            elif weapon_name == "火箭筒": self.rocket_armed = True
+            elif weapon_name == "十字弩": self.crossbow_armed = True
+            elif weapon_name == "手榴弹": self.throwables_armed = True
 
-        # 3. 同步按键 UI (使用自定义按钮的 set_active 方法)
+        # 3. 同步按键 UI
         self.btn_vss.set_active(self.vss_armed)
         self.btn_rocket.set_active(self.rocket_armed)
         self.btn_crossbow.set_active(self.crossbow_armed)
         self.btn_throwables.set_active(self.throwables_armed)
-        self.btn_mortar.set_active(self.mortar_armed) # 迫击炮按钮恒亮
+        self.btn_mortar.set_active(self.mortar_armed) 
 
-        # 4. 通知底层模块同步最新的状态图层！
+        # 4. 同步图层
         self.sync_combat_hud()
 
-    def reset_all_buttons(self):
-        """辅助方法：将所有武器按键恢复白色"""
-        default_bg = "white"
-        default_fg = "black"
-        self.btn_vss.config(bg=default_bg, fg=default_fg)
-        self.btn_rocket.config(bg=default_bg, fg=default_fg)
-        self.btn_crossbow.config(bg=default_bg, fg=default_fg)
-        self.btn_grenade.config(bg=default_bg, fg=default_fg)
-
     def sync_combat_hud(self):
-        # 1. 计算当前有哪些助手需要使用传感器数据
         r_active = self.rocket_armed and self.combat_hud_active
         m_active = self.mortar_armed and self.combat_hud_active
         t_active = self.throwables_armed and self.combat_hud_active
         v_active = self.vss_armed and self.combat_hud_active
         c_active = self.crossbow_armed and self.combat_hud_active
-        # 2. 启停具体的武器助手 (计算 + UI)
+        
         self.rocket.enable_module(r_active)
         self.mortar.enable_module(m_active)
         self.throwables.enable_module(t_active)
         self.vss_assist.enable_module(v_active)
         self.crossbow_assist.enable_module(c_active)
 
-        # 3. 核心修复：根据需求打开传感器的显示层
-        # 小地图测距：只要有任意一个助手在用，就必须显示测距 UI
         minimap_needed = r_active or m_active or t_active or v_active or c_active
         self.minimap.set_display(minimap_needed)
         
-        # 垂直测高：仅迫击炮和雷火闪需要
         elevation_needed = m_active or t_active
         self.elevation.set_display(elevation_needed)
 
     def _sensor_linkage_loop(self):
-        """跨模块传感器联动动态数据泵"""
         while True:
-            # 只要小地图图层是需要的状态，就向下游(垂直测高)分发有效颜色
             if self.combat_hud_active:
                 mini_dists = self.minimap.get_measured_distance()
                 valid_colors = {color: (dist > 0) for color, dist in mini_dists.items()}
                 self.elevation.set_valid_colors(valid_colors)
             time.sleep(0.05)
 
-    # ================= 键盘与鼠标全局监听 (核心) =================
+    # ================= 键盘与鼠标全局监听 (核心修复) =================
     def start_listeners(self):
         self.kb_listener = keyboard.Listener(on_press=self.on_key_press, on_release=self.on_key_release)
         self.mouse_listener = mouse.Listener(on_click=self.on_mouse_click)
@@ -359,65 +315,69 @@ class TacticalHub:
     def on_key_press(self, key):
         self.pressed_keys.add(key)
         
-        # N 键触发
+        # 【新增】：精确记录 Alt 键的状态，供鼠标右键判断使用
+        if key == keyboard.Key.alt_l or key == keyboard.Key.alt_r:
+            self.alt_pressed = True
+        
+        # N 键触发 (全局启停)
         if hasattr(key, 'char') and key.char and key.char.lower() == 'n':
             self.root.after(0, self.toggle_main_trigger)
             
-        # Shift+Ctrl+Space 触发
+        # Shift+Ctrl+Space 触发 (全局启停)
         if (keyboard.Key.shift in self.pressed_keys or keyboard.Key.shift_l in self.pressed_keys) and \
            (keyboard.Key.ctrl in self.pressed_keys or keyboard.Key.ctrl_l in self.pressed_keys) and \
            (keyboard.Key.space in self.pressed_keys):
             self.root.after(0, self.toggle_main_trigger)
             self.pressed_keys.remove(keyboard.Key.space)
 
-        if keyboard.Key.alt_l in self.pressed_keys or keyboard.Key.alt_r in self.pressed_keys:
+        # Alt +/- 切换地图
+        if self.alt_pressed:
             if hasattr(key, 'char'):
                 if key.char == '=' or key.char == '+':
                     self.root.after(0, lambda: self.select_map(self.current_map_idx + 1))
                 elif key.char == '-':
                     self.root.after(0, lambda: self.select_map(self.current_map_idx - 1))
 
+        # 战斗状态下的投掷物快捷键
         if self.combat_hud_active and hasattr(key, 'char') and key.char:
             char_lower = key.char.lower()
             if char_lower == 'v':
                 self.root.after(0, self.throwables.toggle_auto_throw)
-            elif char_lower == 'r':
-                self.root.after(0, self.throwables.trigger_pull_pin)
+            # elif char_lower == 'r':
+            #     self.root.after(0, self.throwables.trigger_pull_pin)
 
     def on_key_release(self, key):
         if key in self.pressed_keys:
             self.pressed_keys.remove(key)
+            
+        # 【新增】：松开 Alt 键时清除状态
+        if key == keyboard.Key.alt_l or key == keyboard.Key.alt_r:
+            self.alt_pressed = False
 
     def on_mouse_click(self, x, y, button, pressed):
+        # 1. 实时更新 pynput 鼠标物理状态
         if button == mouse.Button.left:
             self.left_pressed = pressed
         elif button == mouse.Button.middle:
             self.middle_pressed = pressed
 
-        if self.left_pressed and self.middle_pressed and pressed:
-            if self._combo_locked: return
-            self._combo_locked = True
-            
-            self.map_assist_active = not self.map_assist_active
-            self.root.after(0, lambda: self.map_assist.set_enabled(self.map_assist_active))
-            return
+        # 2. 绝对开启逻辑：左键 和 中键 均处于按下状态
+        if self.left_pressed and self.middle_pressed:
+            if not self.map_assist_active:  # 避免长按时疯狂重复刷新 UI
+                self.map_assist_active = True
+                self.root.after(0, lambda: self.map_assist.set_enabled(True))
 
-        if not pressed and button in (mouse.Button.left, mouse.Button.middle):
-            self._combo_locked = False
-
-        elif button == mouse.Button.right:
-                is_alt_pressed = (ctypes.windll.user32.GetAsyncKeyState(0x12) & 0x8000) != 0
-                if is_alt_pressed:
-                    pass
-                else:
-                    self.map_assist_active = False
-                    self.root.after(0, lambda: self.map_assist.set_enabled(False))
+        # 3. 绝对关闭逻辑：按下右键
+        if button == mouse.Button.right and pressed:
+            # 只有当目前处于显示状态，且没有按住 Alt 时，才执行关闭
+            if self.map_assist_active and not self.alt_pressed:
+                self.map_assist_active = False
+                self.root.after(0, lambda: self.map_assist.set_enabled(False))
 
     def on_closing(self):
         self.kb_listener.stop()
         self.mouse_listener.stop()
         
-        # 安全销毁所有正在跑的引擎
         self.rocket.enable_module(False)
         self.mortar.enable_module(False)
         self.throwables.enable_module(False)
@@ -425,40 +385,10 @@ class TacticalHub:
         self.map_assist.set_enabled(False)
         self.crossbow_assist.enable_module(False)
         
-        # 安全关闭底层常驻传感器
         self.minimap.set_enabled(False)
         self.elevation.set_enabled(False)
         
         self.root.destroy()
-
-    def auto_switch_assistants(self, weapon_name):
-        """回调中枢：当检测到武器变化时，自动控制所有助手的启停"""
-        
-        # 先全部重置为关闭状态
-        self.vss_armed = False
-        self.rocket_armed = False
-        self.mortar_armed = False
-        self.throwables_armed = False
-        
-        # 根据识别到的武器，精准开启对应模块
-        if weapon_name == "VSS":
-            self.vss_armed = True
-        elif weapon_name == "ROCKET":
-            self.rocket_armed = True
-        elif weapon_name == "MORTAR":
-            self.mortar_armed = True
-        elif weapon_name == "THROWABLES":
-            self.throwables_armed = True
-            
-        # 同步 UI 按钮的状态显示 (让界面上的按钮跟随自动控制亮起或熄灭)
-        # 假设你之前用 self.btn_vss, self.btn_rocket 保存了这些按钮对象
-        self.root.after(0, lambda: self.btn_vss.set_active(self.vss_armed))
-        self.root.after(0, lambda: self.btn_rocket.set_active(self.rocket_armed))
-        self.root.after(0, lambda: self.btn_mortar.set_active(self.mortar_armed))
-        self.root.after(0, lambda: self.btn_throwables.set_active(self.throwables_armed))
-        
-        # 触发底层的战斗图层同步
-        self.root.after(0, self.sync_combat_hud)
 
 if __name__ == "__main__":
     root = tk.Tk()

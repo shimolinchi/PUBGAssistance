@@ -50,8 +50,8 @@ POINT_CONFIG = {
     "safty_doors": {"name": "安全门", "color": "#FF0000"}
 }
 
-class MapPointAssistance:
-    def __init__(self, root, config_file="map_config.json"):
+class MapPointAssistant:
+    def __init__(self, root, config_file="config.json"):  # 【修改1】：将默认文件名改为统一的 config.json
         self.root = root
         self.config_file = config_file
         self.monitor = self.load_config()
@@ -70,16 +70,33 @@ class MapPointAssistance:
         self._init_overlay()
 
     def load_config(self):
+        """加载统一配置，并只读取属于大地图的部分"""
         if os.path.exists(self.config_file):
             try:
-                with open(self.config_file, 'r') as f:
-                    return json.load(f).get("map_rect")
-            except: pass
+                with open(self.config_file, 'r', encoding='utf-8') as f:
+                    config_data = json.load(f)
+                    return config_data.get("map_rect") # 只读取 "map_rect" 条目
+            except: 
+                pass
         return None
 
     def save_config(self):
-        with open(self.config_file, 'w') as f:
-            json.dump({"map_rect": self.monitor}, f)
+        """保存配置：先读取原有全部配置，更新自己那部分，再写回，避免覆盖"""
+        config_data = {}
+        # 先尝试读取现有的 config.json
+        if os.path.exists(self.config_file):
+            try:
+                with open(self.config_file, 'r', encoding='utf-8') as f:
+                    config_data = json.load(f)
+            except:
+                pass
+        
+        # 将大地图的标定数据写入特定的键值
+        config_data["map_rect"] = self.monitor
+        
+        # 将完整数据写回文件
+        with open(self.config_file, 'w', encoding='utf-8') as f:
+            json.dump(config_data, f, indent=4, ensure_ascii=False)
 
     def _init_overlay(self):
         self.overlay = tk.Toplevel(self.root)
@@ -99,6 +116,8 @@ class MapPointAssistance:
             hwnd = int(self.overlay.frame(), 16)
             ctypes.windll.user32.SetWindowDisplayAffinity(hwnd, 17)
         except Exception: pass
+
+    
 
     # ================= 供 main.py 调用的 API =================
     def set_enabled(self, enabled: bool):

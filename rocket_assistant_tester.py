@@ -3,7 +3,7 @@ import mss
 
 # 导入真正的物理传感器与火箭筒解算模块
 from minimap_radar import MinimapRadarModule
-from rocket_assistance import RocketAssistance
+from rocket_assistant import RocketAssistant
 
 class RealRocketTester:
     def __init__(self, root):
@@ -26,7 +26,7 @@ class RealRocketTester:
         self.minimap = MinimapRadarModule(self.root)
         
         # 2. 实例化火箭筒 HUD 模块，并将真实的小地图实例传进去
-        self.rocket = RocketAssistance(self.root, self.sw, self.sh, self.minimap, fps=30)
+        self.rocket = RocketAssistant(self.root, self.sw, self.sh, self.minimap, fps=30)
 
         # 状态控制
         self.is_running = False
