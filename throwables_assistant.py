@@ -3,6 +3,9 @@ import threading
 import time
 import math
 import numpy as np
+import mss
+import json
+import os
 from pynput.keyboard import KeyCode
 from pynput.keyboard import Controller as KeyboardController, Key
 from pynput.mouse import Controller as MouseController, Button
@@ -12,7 +15,7 @@ class ThrowablesAssistant:
     PUBG 雷火闪投掷物战术助手
     包含：抬高角度指示、瞬爆圆弧刻度、以及自动瞬爆控制。
     """
-    def __init__(self, root, screen_width, screen_height, minimap_module, elevation_module, fps=30):
+    def __init__(self, root, screen_width, screen_height, minimap_module, elevation_module, fps=30, config_file="config.json"):
         self.root = root
         self.sw = screen_width
         self.sh = screen_height
@@ -20,37 +23,43 @@ class ThrowablesAssistant:
         self.elevation = elevation_module
         self.fps = fps
         
+        # 状态控制
         self.is_enabled = False
         self._thread_running = False
         self.hud_thread = None
         
-        # 键盘与鼠标模拟控制器（用于执行自动投掷）
+        # 控制器
         self.kb_controller = KeyboardController()
         self.mouse_controller = MouseController()
         
-        # ================= 自动瞬爆状态控制 =================
-        self.auto_throw_armed = False # 按 V 键进入待命态
-        self.throw_timer = None       # 负责倒计时的后台计时器
+        # 瞬爆状态
+        self.auto_throw_armed = False
+        self.throw_timer = None
         
-        # ================= 散点标定数据 (待你后续自己填入实测数据) =================
-        # 距离 (X轴)
-        self.calib_dists = [19.8, 24.4, 26.1, 29.0, 30.5, 33.6, 35.1, 36.7, 41.2, 44.3, 47.3]
-        # 屏幕抬高对应的 Y 轴绝对坐标 (第一部分 UI)
-        self.calib_elevations_y = [
-            self.sh * 0.4796, self.sh * 0.5074, self.sh * 0.5046, self.sh * 0.5343, 
-            self.sh * 0.5694, self.sh * 0.6194, self.sh * 0.6444, self.sh * 0.6250, 
-            self.sh * 0.7148, self.sh * 0.7593, self.sh * 0.8954
-        ]
-        # 对应的最佳瞬爆捏雷时间 (单位：秒)
-        self.calib_times = [
-            3.770, 3.461, 3.532, 3.254, 3.014, 
-            2.847, 2.806, 2.617, 2.373, 2.132, 1.581
-        ]
-        
-        # 游戏原生手雷计时 UI 参数
-        self.grenade_total_time = 5.0 # 手雷总爆炸时间
-        self.arc_radius = self.sw * 0.097
-        
+        # ================= 从配置读取标定数据 =================
+        self.calib_dists = []
+        self.calib_elevations_y = []
+        self.calib_times = []
+        self.grenade_total_time = 5.0
+        self.arc_radius = self.sw * 0.097 # 默认值
+
+        if os.path.exists(config_file):
+            try:
+                with open(config_file, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+                    data = config.get("throwables_config", {})
+                    
+                    self.calib_dists = data.get("calib_dists", [])
+                    # 将比例转回当前分辨率的像素坐标
+                    ratios = data.get("calib_elevations_ratio", [])
+                    self.calib_elevations_y = [self.sh * r for r in ratios]
+                    
+                    self.calib_times = data.get("calib_times", [])
+                    self.grenade_total_time = data.get("grenade_total_time", 5.0)
+                    self.arc_radius = self.sw * data.get("arc_radius_ratio", 0.097)
+            except Exception as e:
+                print(f"[投掷物助手] 配置读取失败，使用默认值: {e}")
+
         self.overlay = None
         self.canvas = None
         self._init_overlay()

@@ -3,54 +3,57 @@ import time
 import numpy as np
 import tkinter as tk
 import ctypes
+import json
+import os
 
 class RocketAssistant:
     """
     火箭筒/榴弹发射器 战术标尺辅助模块
     读取小地图距离，通过三次多项式自动拟合数据，在屏幕中心下方渲染动态刻度线。
     """
-    def __init__(self, root, screen_width, screen_height, minimap_module, fps=30):
+    def __init__(self, root, screen_width, screen_height, minimap_module, fps=30, config_file="config.json"):
         self.root = root
         self.screen_width = screen_width
         self.screen_height = screen_height
         self.fps = fps
-        
         self.minimap = minimap_module
+        
         self.is_enabled = False
         self._thread_running = False
         self.hud_thread = None
         
         self.color_map = {
-            "Yellow": "#E3D43C", 
-            "Orange": "#B3500D", 
-            "Blue": "#1A3EA3", 
-            "Green": "#109166"
+            "Yellow": "#E3D43C", "Orange": "#B3500D", 
+            "Blue": "#1A3EA3", "Green": "#109166"
         }
-        
-        raw_ratios = [0.0648, 0.0532, 0.0856, 0.0949, 0.1157, 0.1319, 0.1435, 0.1667, 0.1852, 0.1968, 0.2054, 0.2361, 0.2523, 0.2894, 0.3333, 0.3819, 0.4190, 0.4907, 0.5301, 0.5972, 0.7222]
-        raw_dists = [21.6, 16.4, 31.0, 38.8, 43.3, 51.1, 57.2, 63.3, 69.5, 77.1, 77.1, 84.7, 92.4, 101.7, 110.7, 120.0, 129.1, 138.3, 146.0, 155.2, 164.4]
-        
-        # 核心：将距离和比例打包，并严格按照距离从小到大排序 (插值法的必须要求)
-        sorted_pairs = sorted(zip(raw_dists, raw_ratios))
-        self.calib_dists = [p[0] for p in sorted_pairs]
-        self.calib_ratios = [p[1] for p in sorted_pairs]
 
-        # # ================= 弹道散点数据与自动拟合 =================
-        # # Y轴：映射比例 (0~1)
-        # self.calib_ratios = [0.0648, 0.0532, 0.0856, 0.0949, 0.1157, 0.1319, 0.1435, 0.1667, 0.1852, 0.1968, 0.2054, 0.2361, 0.2523, 0.2894, 0.3333, 0.3819, 0.4190, 0.4907, 0.5301, 0.5972, 0.7222]
-        # # X轴：真实距离 (将前两个 0.0 替换为了推断出的 21.6 和 16.4)
-        # self.calib_dists = [21.6, 16.4, 31.0, 38.8, 43.3, 51.1, 57.2, 63.3, 69.5, 77.1, 77.1, 84.7, 92.4, 101.7, 110.7, 120.0, 129.1, 138.3, 146.0, 155.2, 164.4]
+        # ================= 从配置加载标定数据 =================
+        self.calib_dists = []
+        self.calib_ratios = []
+        self.end_y = self.screen_height * 0.9 # 默认值
         
-        # # 核心：自动生成 3 次多项式系数，无需外部计算！
-        # self.poly_coeffs = np.polyfit(self.calib_dists, self.calib_ratios, 5)
-        
+        if os.path.exists(config_file):
+            try:
+                with open(config_file, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+                    data = config.get("rocket_config", {})
+                    
+                    # 排序逻辑保持不变，确保插值准确
+                    raw_dists = data.get("calib_dists", [])
+                    raw_ratios = data.get("calib_ratios", [])
+                    
+                    if len(raw_dists) == len(raw_ratios) and len(raw_dists) > 0:
+                        sorted_pairs = sorted(zip(raw_dists, raw_ratios))
+                        self.calib_dists = [p[0] for p in sorted_pairs]
+                        self.calib_ratios = [p[1] for p in sorted_pairs]
+                    
+                    self.end_y = self.screen_height * data.get("end_y_ratio", 0.9)
+            except Exception as e:
+                print(f"[火箭筒助手] 配置加载失败: {e}")
+
         # ================= 刻度尺 UI 坐标映射 =================
         self.center_x = self.screen_width / 2
         self.center_y = self.screen_height / 2
-        
-        # ratio 为 1 时的终点 Y 坐标 (距离屏幕最下方 0.1 倍屏幕高度)
-        self.end_y = self.screen_height * 0.9 
-        # 标尺的总长度 (像素)
         self.line_length = self.end_y - self.center_y
 
         self.overlay = None

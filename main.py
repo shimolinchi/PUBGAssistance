@@ -15,6 +15,7 @@ from throwables_assistant import ThrowablesAssistant
 from vss_assistant import VssAssistant
 from crossbow_assistant import CrossbowAssistant
 from weapon_detector import AutoWeaponDetector
+from largemap_radar import AutoMapDistanceAssistant
 
 # ================= 自定义真·圆角按钮组件 =================
 class RoundedButton(tk.Canvas):
@@ -32,7 +33,8 @@ class RoundedButton(tk.Canvas):
         
         self.radius = radius
         self.rect = self._create_rounded_rect(0, 0, width, height, radius, fill=self.color_default, outline="#E5E7EB", width=1)
-        self.text_item = self.create_text(width/2, height/2, text=text, fill=self.text_color, font=("Microsoft YaHei", 10, "bold"))
+        # self.text_item = self.create_text(width/2, height/2, text=text, fill=self.text_color, font=("Microsoft YaHei", 10, "bold"))
+        self.text_id = self.create_text(width/2, height/2, text=text, fill=self.text_color, font=("Microsoft YaHei", 10, "bold"))
         
         self.bind("<ButtonPress-1>", self._on_press)
         self.bind("<ButtonRelease-1>", self._on_release)
@@ -70,13 +72,22 @@ class TacticalHub:
     def __init__(self, root):
         self.root = root
         self.root.title("PUBG 战术助手")
-        self.root.geometry("250x600")
+        self.root.geometry("310x770")
         self.root.configure(bg="#F9FAFB")
         self.root.attributes("-topmost", True)
 
         with mss.MSS() as sct:
             monitor = sct.monitors[1]
             sw, sh = monitor["width"], monitor["height"]
+
+        self.config_file = "config.json"
+        self.hotkeys = {
+            "throw": "v",                              # 瞬爆雷
+            "toggle_hud": "<ctrl>+<shift>+<space>",    # 开关显示
+            "measure_map": "<ctrl>+<shift>+m"          # 触发大地图测距
+        }
+        self.load_hotkey_config()
+        self._is_capturing = False # 防止重复点击录制快捷键
 
         # ==================== 1. 实例化核心底层传感器 ====================
         self.minimap = MinimapRadarModule(self.root)
@@ -93,6 +104,7 @@ class TacticalHub:
         self.vss_assist = VssAssistant(self.root, sw, sh, self.minimap, fps=30)
         self.crossbow_assist = CrossbowAssistant(self.root, sw, sh, self.minimap, fps=30)
         self.map_assist = MapPointAssistant(self.root)
+        self.largemap_radar = AutoMapDistanceAssistant(self.root, sw, sh, "config.json")
 
         # 武器武装状态位 
         self.rocket_armed = False
@@ -163,8 +175,30 @@ class TacticalHub:
 
         f1 = tk.Frame(self.root, bg="#F9FAFB")
         f1.pack(pady=5)
-        RoundedButton(f1, 90, 35, 25, "校准大地图", self.map_assist.trigger_calibration).grid(row=0, column=0, padx=10)
-        RoundedButton(f1, 90, 35, 25, "校准小地图", self.minimap.trigger_calibration).grid(row=0, column=1, padx=10)
+        RoundedButton(f1, 105, 30, 25, "校准大地图", self.map_assist.trigger_calibration).grid(row=0, column=0, padx=10)
+        RoundedButton(f1, 105, 30, 25, "校准小地图", self.minimap.trigger_calibration).grid(row=0, column=1, padx=10)
+
+        # =================【修复：使用 self.root 并适配浅色 UI】=================
+        # 添加一条细灰线作为分割
+        tk.Frame(self.root, height=1, bg="#D1D5DB").pack(fill="x", pady=10, padx=20)
+        
+        tk.Label(self.root, text="- 快捷键配置 -", bg="#F9FAFB", fg="#6B7280", font=("Microsoft YaHei", 9)).pack(pady=4)
+
+        hud_text = self.hotkeys['toggle_hud'].replace("<", "").replace(">", "").upper()
+        self.btn_hk_hud = RoundedButton(self.root, 230, 30, 25, f"显示开关: {hud_text}", command=lambda: self.capture_hotkey('toggle_hud', self.btn_hk_hud))
+        self.btn_hk_hud.pack(pady=3)
+
+        throw_text = self.hotkeys['throw'].replace("<", "").replace(">", "").upper()
+        self.btn_hk_throw = RoundedButton(self.root, 230, 30, 25, f"手雷瞬爆: {throw_text}", command=lambda: self.capture_hotkey('throw', self.btn_hk_throw))
+        self.btn_hk_throw.pack(pady=3)
+
+        map_text = self.hotkeys['measure_map'].replace("<", "").replace(">", "").upper()
+        self.btn_hk_map = RoundedButton(self.root, 230, 30, 25, f"大地图测距: {map_text}", command=lambda: self.capture_hotkey('measure_map', self.btn_hk_map))
+        self.btn_hk_map.pack(pady=3)
+        
+        # 底部再加一条分割线
+        tk.Frame(self.root, height=1, bg="#D1D5DB").pack(fill="x", pady=10, padx=20)
+        # ========================================================================
 
         tk.Label(self.root, text="- 地图选择 -", bg="#F9FAFB", fg="#6B7280", font=("Microsoft YaHei", 9)).pack(pady=4)
         f_maps = tk.Frame(self.root, bg="#F9FAFB")
@@ -173,7 +207,7 @@ class TacticalHub:
             row = i // 3
             col = i % 3
             cmd = lambda idx=i: self.select_map(idx)
-            btn = RoundedButton(f_maps, 60, 35, 20, map_name.split()[0], cmd, is_toggle=True)
+            btn = RoundedButton(f_maps, 70, 30, 25, map_name.split()[0], cmd, is_toggle=True)
             btn.grid(row=row, column=col, padx=5, pady=5)
             self.map_buttons.append(btn)
         self.select_map(0)
@@ -183,7 +217,7 @@ class TacticalHub:
         f_sizes.pack()
         for i, (name, val) in enumerate(self.marker_sizes):
             cmd = lambda idx=i: self.select_size(idx)
-            btn = RoundedButton(f_sizes, 60, 35, 20, name, cmd, is_toggle=True)
+            btn = RoundedButton(f_sizes, 70, 30, 20, name, cmd, is_toggle=True)
             btn.grid(row=0, column=i, padx=5)
             self.size_buttons.append(btn)
         self.select_size(1)
@@ -199,17 +233,114 @@ class TacticalHub:
         self.btn_crossbow = self.add_assistant_button("启用十字弩", self.toggle_crossbow_arm)
         
         info_text = (
-            "Shift+Ctrl+Space 或 N : 启停显示与自动识别 \n"
-            "V: 自动瞬爆 | R: 拉环 | Alt +/- : 换图 \n"
-            "左键+中键 : 激活地图 | 右键: 关 | Alt+右键 : 留"
+            "Shift+Ctrl+Space 或 N : 显示与自动识别 \n"
+            "左+中键: 激活地图 | Alt +/- : 更换地图\n"
+            "右键: 关闭地图 | Alt+右键 : 标记路线\n"
+            "V: 自动瞬爆 | Shift+Ctrl+Tab: 大地图测距\n"
         )
         tk.Label(self.root, text=info_text, bg="#F9FAFB", fg="#9CA3AF", justify="center", font=("Microsoft YaHei", 9)).pack(side="bottom", pady=10)
+
+    def update_hotkey_buttons(self):
+        """刷新按钮显示的文本"""
+        if hasattr(self, 'btn_hk_hud'):
+            hud_text = self.hotkeys['toggle_hud'].replace("<", "").replace(">", "").upper()
+            throw_text = self.hotkeys['throw'].replace("<", "").replace(">", "").upper()
+            map_text = self.hotkeys['measure_map'].replace("<", "").replace(">", "").upper()
+            
+            self.btn_hk_hud.itemconfig(self.btn_hk_hud.text_id, text=f"显示开关: {hud_text}")
+            self.btn_hk_throw.itemconfig(self.btn_hk_throw.text_id, text=f"手雷瞬爆: {throw_text}")
+            self.btn_hk_map.itemconfig(self.btn_hk_map.text_id, text=f"大地图测距: {map_text}")
+
+    def capture_hotkey(self, action_key, btn_widget):
+        """录制新快捷键的核心逻辑 (修复 Alt 键屏蔽字符的终极版)"""
+        if self._is_capturing: return
+        self._is_capturing = True
+
+        # 先停掉所有监听器，防止在改键时触发游戏功能
+        if hasattr(self, 'kb_listener') and self.kb_listener: self.kb_listener.stop()
+        if hasattr(self, 'hotkey_listener') and self.hotkey_listener: self.hotkey_listener.stop()
+
+        btn_widget.itemconfig(btn_widget.text_id, text="请按下按键...")
+        self.root.update()
+
+        modifiers = []
+        def on_press(key):
+            name = ""
+            # 1. 尝试解析修饰键与特殊键
+            if hasattr(key, 'name') and key.name:
+                name = f"<{key.name}>"
+                if name in ["<ctrl_l>", "<ctrl_r>"]: name = "<ctrl>"
+                elif name in ["<shift_l>", "<shift_r>"]: name = "<shift>"
+                elif name in ["<alt_l>", "<alt_r>", "<alt_gr>"]: name = "<alt>"
+                elif name == "<space>": name = "<space>"
+                
+                # 如果是修饰键，存入列表，然后 return True 继续等待下一个按键
+                if name in ["<ctrl>", "<shift>", "<alt>"]:
+                    if name not in modifiers:
+                        modifiers.append(name)
+                    return True 
+                else:
+                    finish_capture(name)
+                    return False
+
+            # 2. 尝试解析普通字符 (终极双保险：char + vk)
+            char = None
+            if hasattr(key, 'char') and key.char:
+                char = key.char
+                # 修复 1: Ctrl+字母 变控制字符的问题
+                if 1 <= ord(char) <= 26:
+                    char = chr(ord(char) + 96)
+            elif hasattr(key, 'vk') and key.vk is not None:
+                # 修复 2: Alt 被按下时 char 变为空的问题 (硬件虚拟码兜底)
+                # 65-90 是 A-Z，48-57 是数字 0-9
+                if 65 <= key.vk <= 90:
+                    char = chr(key.vk).lower()
+                elif 48 <= key.vk <= 57:
+                    char = chr(key.vk)
+
+            if char:
+                finish_capture(char.lower())
+                return False
+
+        def finish_capture(main_key):
+            combo_str = "+".join(modifiers + [main_key])
+            self.hotkeys[action_key] = combo_str
+            self.save_hotkey_config()
+            self._is_capturing = False
+            # 回到主线程更新 UI 并重启监听引擎
+            self.root.after(0, self.update_hotkey_buttons)
+            self.root.after(100, self.start_listeners)
+
+        self.temp_listener = keyboard.Listener(on_press=on_press)
+        self.temp_listener.start()
+
+    def load_hotkey_config(self):
+        import json, os
+        if os.path.exists(self.config_file):
+            try:
+                with open(self.config_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    if "hotkeys" in data:
+                        self.hotkeys.update(data["hotkeys"])
+            except: pass
+
+    def save_hotkey_config(self):
+        import json, os
+        data = {}
+        if os.path.exists(self.config_file):
+            try:
+                with open(self.config_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+            except: pass
+        data["hotkeys"] = self.hotkeys
+        with open(self.config_file, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=4, ensure_ascii=False)
 
     def add_assistant_button(self, text, command):
         current_count = len(self.assistant_buttons)
         row = current_count // 2
         col = current_count % 2
-        btn = RoundedButton(self.f_assistants, 90, 35, 20, text, command, is_toggle=True)
+        btn = RoundedButton(self.f_assistants, 105, 35, 25, text, command, is_toggle=True)
         btn.grid(row=row, column=col, padx=10, pady=5)
         self.assistant_buttons.append(btn)
         return btn
@@ -277,6 +408,7 @@ class TacticalHub:
         self.sync_combat_hud()
 
     def sync_combat_hud(self):
+        active = self.combat_hud_active
         r_active = self.rocket_armed and self.combat_hud_active
         m_active = self.mortar_armed and self.combat_hud_active
         t_active = self.throwables_armed and self.combat_hud_active
@@ -295,6 +427,8 @@ class TacticalHub:
         elevation_needed = m_active or t_active
         self.elevation.set_display(elevation_needed)
 
+        self.largemap_radar.set_display(active)
+
     def _sensor_linkage_loop(self):
         while True:
             if self.combat_hud_active:
@@ -303,58 +437,76 @@ class TacticalHub:
                 self.elevation.set_valid_colors(valid_colors)
             time.sleep(0.05)
 
+    def trigger_toggle_hud(self):
+        self.root.after(0, self.toggle_main_trigger)
+
+    def trigger_largemap_radar(self):
+        if getattr(self, 'combat_hud_active', False):
+            self.root.after(0, self.largemap_radar.toggle_mode)
+
     # ================= 键盘与鼠标全局监听 (核心修复) =================
     def start_listeners(self):
+        # 1. 强制清理历史残余监听器
+        if hasattr(self, 'kb_listener') and self.kb_listener: self.kb_listener.stop()
+        if hasattr(self, 'mouse_listener') and self.mouse_listener: self.mouse_listener.stop()
+        if hasattr(self, 'hotkey_listener') and self.hotkey_listener: self.hotkey_listener.stop()
+
+        # 2. 基础键鼠监听 (处理单击、释放事件)
         self.kb_listener = keyboard.Listener(on_press=self.on_key_press, on_release=self.on_key_release)
-        self.mouse_listener = mouse.Listener(on_click=self.on_mouse_click)
         self.kb_listener.start()
+
+        self.mouse_listener = mouse.Listener(on_click=self.on_mouse_click)
         self.mouse_listener.start()
-        self.linkage_thread = threading.Thread(target=self._sensor_linkage_loop, daemon=True)
-        self.linkage_thread.start()
+
+        # 3. 组合键专用监听引擎 (GlobalHotKeys)
+        mapping = {
+            self.hotkeys['toggle_hud']: self.trigger_toggle_hud,
+            self.hotkeys['measure_map']: self.trigger_largemap_radar
+        }
+        self.hotkey_listener = keyboard.GlobalHotKeys(mapping)
+        self.hotkey_listener.start()
+
+        # 4. 传感器后台轮询
+        if getattr(self, 'linkage_thread', None) is None or not self.linkage_thread.is_alive():
+            self.linkage_thread = threading.Thread(target=self._sensor_linkage_loop, daemon=True)
+            self.linkage_thread.start()
 
     def on_key_press(self, key):
-        self.pressed_keys.add(key)
-        
-        # 【新增】：精确记录 Alt 键的状态，供鼠标右键判断使用
-        if key == keyboard.Key.alt_l or key == keyboard.Key.alt_r:
-            self.alt_pressed = True
-        
-        # N 键触发 (全局启停)
-        if hasattr(key, 'char') and key.char and key.char.lower() == 'n':
-            self.root.after(0, self.toggle_main_trigger)
-            
-        # Shift+Ctrl+Space 触发 (全局启停)
-        if (keyboard.Key.shift in self.pressed_keys or keyboard.Key.shift_l in self.pressed_keys) and \
-           (keyboard.Key.ctrl in self.pressed_keys or keyboard.Key.ctrl_l in self.pressed_keys) and \
-           (keyboard.Key.space in self.pressed_keys):
-            self.root.after(0, self.toggle_main_trigger)
-            self.pressed_keys.remove(keyboard.Key.space)
+        try:
+            key_name = key.char.lower() if hasattr(key, 'char') and key.char else f"<{key.name}>"
+        except:
+            key_name = str(key)
 
-        # Alt +/- 切换地图
-        if self.alt_pressed:
-            if hasattr(key, 'char'):
-                if key.char == '=' or key.char == '+':
-                    self.root.after(0, lambda: self.select_map(self.current_map_idx + 1))
-                elif key.char == '-':
-                    self.root.after(0, lambda: self.select_map(self.current_map_idx - 1))
+        # 固定系统保留键: n (HUD) 与 esc (取消丢雷)
+        if key_name == 'n':
+            self.root.after(0, self.toggle_main_trigger)
+        elif key_name == '<esc>':
+            if getattr(self, 'throwables_active', False):
+                self.root.after(0, self.throwables.cancel_throw)
 
-        # 战斗状态下的投掷物快捷键
-        if self.combat_hud_active and hasattr(key, 'char') and key.char:
-            char_lower = key.char.lower()
-            if char_lower == 'v':
-                self.root.after(0, self.throwables.toggle_auto_throw)
-            # elif char_lower == 'r':
-            #     self.root.after(0, self.throwables.trigger_pull_pin)
+        # 动态解析的手雷键 (提取主键以支持长按逻辑)
+        throw_key_main = self.hotkeys['throw'].split('+')[-1]
+        if key_name == throw_key_main:
+            if getattr(self, 'throwables_armed', False) and getattr(self, 'combat_hud_active', False):
+                self.throwables_active = True
+                self.root.after(0, self.throwables.activate_throw)
 
     def on_key_release(self, key):
-        if key in self.pressed_keys:
-            self.pressed_keys.remove(key)
-            
-        # 【新增】：松开 Alt 键时清除状态
-        if key == keyboard.Key.alt_l or key == keyboard.Key.alt_r:
-            self.alt_pressed = False
+        try:
+            key_name = key.char.lower() if hasattr(key, 'char') and key.char else f"<{key.name}>"
+        except:
+            key_name = str(key)
+
+        # 松开手雷键时触发瞬爆
+        throw_key_main = self.hotkeys['throw'].split('+')[-1]
+        if key_name == throw_key_main:
+            if getattr(self, 'throwables_active', False):
+                self.throwables_active = False
+                self.root.after(0, self.throwables.execute_throw)
 
     def on_mouse_click(self, x, y, button, pressed):
+
+        self.root.after(0, self.largemap_radar.on_mouse_click, x, y, button, pressed)
         # 1. 实时更新 pynput 鼠标物理状态
         if button == mouse.Button.left:
             self.left_pressed = pressed
@@ -387,6 +539,7 @@ class TacticalHub:
         
         self.minimap.set_enabled(False)
         self.elevation.set_enabled(False)
+        self.largemap_radar.set_display(False)
         
         self.root.destroy()
 

@@ -59,6 +59,15 @@ class MapPointAssistant:
         self.is_enabled = False
         self.calib_state = "IDLE"
         self.calib_pt1 = None
+
+        self.map_data = {}
+        if os.path.exists(config_file):
+            try:
+                with open(config_file, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+                    self.map_data = config.get("map_data", {})
+            except Exception as e:
+                print(f"[地图助手] 配置读取失败: {e}")
         
         # 核心状态：只管地图和尺寸
         self.current_map_name = "艾伦格 (Erangel)"

@@ -3,19 +3,20 @@ import time
 import numpy as np
 import tkinter as tk
 import ctypes
+import json
+import os
 
 class MortarAssistant:
     """
     迫击炮火控解算与 HUD 显示模块
     只负责计算真实距离，并在右侧屏幕悬浮显示四个标点的火控数据。
     """
-    def __init__(self, root, screen_width, screen_height, minimap_module, elevation_module, fps=30):
+    def __init__(self, root, screen_width, screen_height, minimap_module, elevation_module, fps=30, config_file="config.json"):
         self.root = root
         self.screen_width = screen_width
         self.screen_height = screen_height
         self.fps = fps
         
-        # 接收两大单例传感器模块的引用 (不再需要罗盘模块)
         self.minimap = minimap_module
         self.elevation = elevation_module
         
@@ -23,10 +24,27 @@ class MortarAssistant:
         self._thread_running = False
         self.hud_thread = None
         self.is_fpp = True
-        self.a_param = 0.2 
-        self.b_param = 0.2
         
-        # UI 颜色配置 (基础色)
+        # ================= 从配置加载参数 =================
+        self.a_param = 0.2
+        self.b_param = 0.2
+        self.tpp_dists = []
+        self.tpp_elevations = []
+
+        if os.path.exists(config_file):
+            try:
+                with open(config_file, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+                    data = config.get("mortar_config", {})
+                    
+                    self.a_param = data.get("a_param", 0.2)
+                    self.b_param = data.get("b_param", 0.2)
+                    self.tpp_dists = data.get("tpp_dists", [])
+                    self.tpp_elevations = data.get("tpp_elevations", [])
+            except Exception as e:
+                print(f"[迫击炮助手] 配置读取失败: {e}")
+
+        # UI 颜色配置
         self.color_map = {
             "Yellow": "#FBED21", 
             "Orange": "#B3500D", 
@@ -34,13 +52,6 @@ class MortarAssistant:
             "Green": "#109166"
         }
         
-        # 标定数据缓存
-        self.tpp_dists = [30.67, 41.39, 58.23, 58.23, 58.23, 110.3, 134.8, 157.77, 229.76, 231.29, 238.95, 240.48, 257.33, 257.33, 340.05]
-        self.tpp_ratios = [0.5444, 0.5343, 0.5241, 0.5222, 0.5204, 0.5167, 0.5148, 0.512, 0.5111, 0.5111, 0.5102, 0.5093, 0.5093, 0.5093, 0.5083]
-        self.fpp_dists = [53.61, 58.21, 102.64, 131.74, 157.77, 202.19, 225.16, 286.43, 294.09, 336.98]
-        self.fpp_ratios = [0.513, 0.512, 0.5083, 0.5074, 0.5074, 0.5065, 0.5065, 0.5065, 0.5065, 0.5065]
-
-        # 初始化 HUD 透明显示层
         self.overlay = None
         self.canvas = None
         self._init_overlay()

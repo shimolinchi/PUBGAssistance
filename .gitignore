@@ -3,6 +3,7 @@
 *.onefile-build/
 *.bin
 *.exe
+*.zip
 
 # 2. Python 缓存与虚拟环境
 __pycache__/
