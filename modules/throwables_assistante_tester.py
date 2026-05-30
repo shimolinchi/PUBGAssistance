@@ -5,9 +5,9 @@ import threading
 import time
 
 # 导入你的三大模块
-from minimap_radar import MinimapRadarModule
-from elevation_radar import ElevationRadarModule
-from throwables_assistant import ThrowablesAssistant
+from modules.minimap_radar import MinimapRadarModule
+from modules.elevation_radar import ElevationRadarModule
+from modules.throwables_assistant import ThrowablesAssistant
 
 class ThrowablesTester:
     def __init__(self, root):

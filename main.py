@@ -6,16 +6,16 @@ import time
 import ctypes
 
 # 导入所有独立模块
-from minimap_radar import MinimapRadarModule
-from elevation_radar import ElevationRadarModule
-from mortar_assistant import MortarAssistant
-from rocket_assistant import RocketAssistant
-from map_assistant import MapPointAssistant
-from throwables_assistant import ThrowablesAssistant
-from vss_assistant import VssAssistant
-from crossbow_assistant import CrossbowAssistant
-from weapon_detector import AutoWeaponDetector
-from largemap_radar import AutoMapDistanceAssistant
+from modules.minimap_radar import MinimapRadarModule
+from modules.elevation_radar import ElevationRadarModule
+from modules.mortar_assistant import MortarAssistant
+from modules.rocket_assistant import RocketAssistant
+from modules.map_assistant import MapPointAssistant
+from modules.throwables_assistant import ThrowablesAssistant
+from modules.vss_assistant import VssAssistant
+from modules.crossbow_assistant import CrossbowAssistant
+from modules.weapon_detector import AutoWeaponDetector
+from modules.largemap_radar import AutoMapDistanceAssistant
 
 # ================= 自定义真·圆角按钮组件 =================
 class RoundedButton(tk.Canvas):

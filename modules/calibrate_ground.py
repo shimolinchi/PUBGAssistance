@@ -2,9 +2,9 @@ import tkinter as tk
 import ctypes
 import mss  # 仅用于获取真实屏幕分辨率
 
-from minimap_radar import MinimapRadarModule
-from compass_radar import CompassRadarModule
-from elevation_radar import ElevationRadarModule
+from modules.minimap_radar import MinimapRadarModule
+from modules.compass_radar import CompassRadarModule
+from modules.elevation_radar import ElevationRadarModule
 from pynput import keyboard
 
 # ==================== 屏幕比例配置区 (0.0 ~ 1.0) ====================

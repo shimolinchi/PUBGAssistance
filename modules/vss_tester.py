@@ -2,8 +2,8 @@ import tkinter as tk
 import mss
 
 # 导入真实的小地图模块 和 我们刚写好的 VSS 助手
-from minimap_radar import MinimapRadarModule
-from vss_assistant import VssAssistant
+from modules.minimap_radar import MinimapRadarModule
+from modules.vss_assistant import VssAssistant
 
 class VSSTester:
     def __init__(self):

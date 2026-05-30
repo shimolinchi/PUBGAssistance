@@ -1,7 +1,7 @@
 import tkinter as tk
 from tkinter import ttk
 from pynput import mouse, keyboard
-from map_assistant import MapPointAssistant, MAP_DATA, POINT_CONFIG
+from modules.map_assistant import MapPointAssistant, MAP_DATA, POINT_CONFIG
 
 class MapPointTester:
     def __init__(self, root):

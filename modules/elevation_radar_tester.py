@@ -1,5 +1,5 @@
 import tkinter as tk
-from elevation_radar import ElevationRadarModule
+from modules.elevation_radar import ElevationRadarModule
 import cv2
 import threading
 import time

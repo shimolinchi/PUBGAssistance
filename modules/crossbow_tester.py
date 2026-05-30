@@ -2,8 +2,8 @@ import tkinter as tk
 import os
 import json
 import cv2
-from minimap_radar import MinimapRadarModule
-from crossbow_assistant import CrossbowAssistant
+from modules.minimap_radar import MinimapRadarModule
+from modules.crossbow_assistant import CrossbowAssistant
 
 class CrossbowDebugTester:
     def __init__(self, root):

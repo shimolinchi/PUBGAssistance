@@ -1,9 +1,9 @@
 import tkinter as tk
 import mss
 
-from minimap_radar import MinimapRadarModule
-from elevation_radar import ElevationRadarModule
-from mortar_assistant import MortarAssistant
+from modules.minimap_radar import MinimapRadarModule
+from modules.elevation_radar import ElevationRadarModule
+from modules.mortar_assistant import MortarAssistant
 
 # ================= 传感器区域配置 =================
 ELEV_START_Y    = 0.11   # 从 11% 开始

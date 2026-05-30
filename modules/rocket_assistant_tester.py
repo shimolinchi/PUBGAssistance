@@ -2,8 +2,8 @@ import tkinter as tk
 import mss
 
 # 导入真正的物理传感器与火箭筒解算模块
-from minimap_radar import MinimapRadarModule
-from rocket_assistant import RocketAssistant
+from modules.minimap_radar import MinimapRadarModule
+from modules.rocket_assistant import RocketAssistant
 
 class RealRocketTester:
     def __init__(self, root):
