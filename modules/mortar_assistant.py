@@ -25,7 +25,6 @@ class MortarAssistant:
         self.hud_thread = None
         self.is_fpp = True
         
-        # ================= 从配置加载参数 =================
         self.a_param = 0.2
         self.b_param = 0.2
         self.tpp_dists = []

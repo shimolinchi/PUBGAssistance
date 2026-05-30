@@ -17,7 +17,6 @@ from modules.crossbow_assistant import CrossbowAssistant
 from modules.weapon_detector import AutoWeaponDetector
 from modules.largemap_radar import AutoMapDistanceAssistant
 
-# ================= 自定义真·圆角按钮组件 =================
 class RoundedButton(tk.Canvas):
     def __init__(self, parent, width, height, radius, text, command, is_toggle=False, *args, **kwargs):
         super().__init__(parent, width=width, height=height, bg=parent["bg"], highlightthickness=0, *args, **kwargs)
@@ -67,7 +66,6 @@ class RoundedButton(tk.Canvas):
         self.is_active = state
         self.itemconfig(self.rect, fill=self.color_active if self.is_active else self.color_default)
 
-# ================= 全局战术中枢主类 =================
 class TacticalHub:
     def __init__(self, root):
         self.root = root
@@ -89,7 +87,6 @@ class TacticalHub:
         self.load_hotkey_config()
         self._is_capturing = False # 防止重复点击录制快捷键
 
-        # ==================== 1. 实例化核心底层传感器 ====================
         self.minimap = MinimapRadarModule(self.root)
         self.elevation = ElevationRadarModule(self.root, screen_width=sw, screen_height=sh, fps=30)
         self.minimap.set_enabled(True) 
@@ -97,7 +94,6 @@ class TacticalHub:
         self.elevation.set_enabled(True)
         self.elevation.set_display(False)
 
-        # ==================== 2. 实例化上层武器助手 ====================
         self.rocket = RocketAssistant(self.root, sw, sh, self.minimap, fps=30)
         self.mortar = MortarAssistant(self.root, sw, sh, self.minimap, self.elevation, fps=30)
         self.throwables = ThrowablesAssistant(self.root, sw, sh, self.minimap, self.elevation, fps=30)
@@ -108,7 +104,7 @@ class TacticalHub:
 
         # 武器武装状态位 
         self.rocket_armed = False
-        self.mortar_armed = True   # 迫击炮默认开启
+        self.mortar_armed = True  
         self.throwables_armed = False
         self.vss_armed = False
         self.crossbow_armed = False
@@ -119,7 +115,7 @@ class TacticalHub:
 
         self.pressed_keys = set()
         
-        # 纯 pynput 的底层物理状态记录
+        # pynput 的底层物理状态记录
         self.left_pressed = False
         self.middle_pressed = False
         self.alt_pressed = False
@@ -145,7 +141,6 @@ class TacticalHub:
         # 初始化 UI 面板
         self.init_ui()
 
-        # ==================== 3. 注册 UI 状态标签与自动探测器 ====================
         self.status_var = tk.StringVar(value="当前状态: 未开启显示")
         self.lbl_weapon_status = tk.Label(
             self.root, 
@@ -178,7 +173,6 @@ class TacticalHub:
         RoundedButton(f1, 105, 30, 25, "校准大地图", self.map_assist.trigger_calibration).grid(row=0, column=0, padx=10)
         RoundedButton(f1, 105, 30, 25, "校准小地图", self.minimap.trigger_calibration).grid(row=0, column=1, padx=10)
 
-        # =================【修复：使用 self.root 并适配浅色 UI】=================
         # 添加一条细灰线作为分割
         tk.Frame(self.root, height=1, bg="#D1D5DB").pack(fill="x", pady=10, padx=20)
         
@@ -196,9 +190,7 @@ class TacticalHub:
         self.btn_hk_map = RoundedButton(self.root, 230, 30, 25, f"大地图测距: {map_text}", command=lambda: self.capture_hotkey('measure_map', self.btn_hk_map))
         self.btn_hk_map.pack(pady=3)
         
-        # 底部再加一条分割线
         tk.Frame(self.root, height=1, bg="#D1D5DB").pack(fill="x", pady=10, padx=20)
-        # ========================================================================
 
         tk.Label(self.root, text="- 地图选择 -", bg="#F9FAFB", fg="#6B7280", font=("Microsoft YaHei", 9)).pack(pady=4)
         f_maps = tk.Frame(self.root, bg="#F9FAFB")
@@ -266,15 +258,12 @@ class TacticalHub:
         modifiers = []
         def on_press(key):
             name = ""
-            # 1. 尝试解析修饰键与特殊键
             if hasattr(key, 'name') and key.name:
                 name = f"<{key.name}>"
                 if name in ["<ctrl_l>", "<ctrl_r>"]: name = "<ctrl>"
                 elif name in ["<shift_l>", "<shift_r>"]: name = "<shift>"
                 elif name in ["<alt_l>", "<alt_r>", "<alt_gr>"]: name = "<alt>"
                 elif name == "<space>": name = "<space>"
-                
-                # 如果是修饰键，存入列表，然后 return True 继续等待下一个按键
                 if name in ["<ctrl>", "<shift>", "<alt>"]:
                     if name not in modifiers:
                         modifiers.append(name)
@@ -283,15 +272,12 @@ class TacticalHub:
                     finish_capture(name)
                     return False
 
-            # 2. 尝试解析普通字符 (终极双保险：char + vk)
             char = None
             if hasattr(key, 'char') and key.char:
                 char = key.char
-                # 修复 1: Ctrl+字母 变控制字符的问题
                 if 1 <= ord(char) <= 26:
                     char = chr(ord(char) + 96)
             elif hasattr(key, 'vk') and key.vk is not None:
-                # 修复 2: Alt 被按下时 char 变为空的问题 (硬件虚拟码兜底)
                 # 65-90 是 A-Z，48-57 是数字 0-9
                 if 65 <= key.vk <= 90:
                     char = chr(key.vk).lower()
@@ -307,7 +293,6 @@ class TacticalHub:
             self.hotkeys[action_key] = combo_str
             self.save_hotkey_config()
             self._is_capturing = False
-            # 回到主线程更新 UI 并重启监听引擎
             self.root.after(0, self.update_hotkey_buttons)
             self.root.after(100, self.start_listeners)
 
@@ -380,14 +365,12 @@ class TacticalHub:
         self.root.after(0, lambda: self._sync_weapon_ui(weapon_name))
 
     def _sync_weapon_ui(self, weapon_name):
-        # 1. 重置除了迫击炮外的所有状态
         self.vss_armed = False
         self.rocket_armed = False
         self.crossbow_armed = False
         self.throwables_armed = False
         self.mortar_armed = True 
         
-        # 2. 根据识别结果开启对应武装
         if weapon_name is None:
             self.status_var.set("当前状态: 未识别到可用武器")
         else:
@@ -397,14 +380,12 @@ class TacticalHub:
             elif weapon_name == "十字弩": self.crossbow_armed = True
             elif weapon_name == "手榴弹": self.throwables_armed = True
 
-        # 3. 同步按键 UI
         self.btn_vss.set_active(self.vss_armed)
         self.btn_rocket.set_active(self.rocket_armed)
         self.btn_crossbow.set_active(self.crossbow_armed)
         self.btn_throwables.set_active(self.throwables_armed)
         self.btn_mortar.set_active(self.mortar_armed) 
 
-        # 4. 同步图层
         self.sync_combat_hud()
 
     def sync_combat_hud(self):
@@ -444,21 +425,17 @@ class TacticalHub:
         if getattr(self, 'combat_hud_active', False):
             self.root.after(0, self.largemap_radar.toggle_mode)
 
-    # ================= 键盘与鼠标全局监听 (核心修复) =================
     def start_listeners(self):
-        # 1. 强制清理历史残余监听器
         if hasattr(self, 'kb_listener') and self.kb_listener: self.kb_listener.stop()
         if hasattr(self, 'mouse_listener') and self.mouse_listener: self.mouse_listener.stop()
         if hasattr(self, 'hotkey_listener') and self.hotkey_listener: self.hotkey_listener.stop()
 
-        # 2. 基础键鼠监听 (处理单击、释放事件)
         self.kb_listener = keyboard.Listener(on_press=self.on_key_press, on_release=self.on_key_release)
         self.kb_listener.start()
 
         self.mouse_listener = mouse.Listener(on_click=self.on_mouse_click)
         self.mouse_listener.start()
 
-        # 3. 组合键专用监听引擎 (GlobalHotKeys)
         mapping = {
             self.hotkeys['toggle_hud']: self.trigger_toggle_hud,
             self.hotkeys['measure_map']: self.trigger_largemap_radar
@@ -466,7 +443,6 @@ class TacticalHub:
         self.hotkey_listener = keyboard.GlobalHotKeys(mapping)
         self.hotkey_listener.start()
 
-        # 4. 传感器后台轮询
         if getattr(self, 'linkage_thread', None) is None or not self.linkage_thread.is_alive():
             self.linkage_thread = threading.Thread(target=self._sensor_linkage_loop, daemon=True)
             self.linkage_thread.start()
@@ -477,14 +453,12 @@ class TacticalHub:
         except:
             key_name = str(key)
 
-        # 固定系统保留键: n (HUD) 与 esc (取消丢雷)
         if key_name == 'n':
             self.root.after(0, self.toggle_main_trigger)
         elif key_name == '<esc>':
             if getattr(self, 'throwables_active', False):
                 self.root.after(0, self.throwables.cancel_throw)
 
-        # 动态解析的手雷键 (提取主键以支持长按逻辑)
         throw_key_main = self.hotkeys['throw'].split('+')[-1]
         if key_name == throw_key_main:
             if getattr(self, 'throwables_armed', False) and getattr(self, 'combat_hud_active', False):
@@ -497,7 +471,6 @@ class TacticalHub:
         except:
             key_name = str(key)
 
-        # 松开手雷键时触发瞬爆
         throw_key_main = self.hotkeys['throw'].split('+')[-1]
         if key_name == throw_key_main:
             if getattr(self, 'throwables_active', False):
@@ -507,21 +480,17 @@ class TacticalHub:
     def on_mouse_click(self, x, y, button, pressed):
 
         self.root.after(0, self.largemap_radar.on_mouse_click, x, y, button, pressed)
-        # 1. 实时更新 pynput 鼠标物理状态
         if button == mouse.Button.left:
             self.left_pressed = pressed
         elif button == mouse.Button.middle:
             self.middle_pressed = pressed
 
-        # 2. 绝对开启逻辑：左键 和 中键 均处于按下状态
         if self.left_pressed and self.middle_pressed:
             if not self.map_assist_active:  # 避免长按时疯狂重复刷新 UI
                 self.map_assist_active = True
                 self.root.after(0, lambda: self.map_assist.set_enabled(True))
 
-        # 3. 绝对关闭逻辑：按下右键
         if button == mouse.Button.right and pressed:
-            # 只有当目前处于显示状态，且没有按住 Alt 时，才执行关闭
             if self.map_assist_active and not self.alt_pressed:
                 self.map_assist_active = False
                 self.root.after(0, lambda: self.map_assist.set_enabled(False))

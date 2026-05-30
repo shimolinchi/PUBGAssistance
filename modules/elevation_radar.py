@@ -42,7 +42,6 @@ class ElevationRadarModule:
         self.radar_thread = None
         
         self.latest_targets = []
-        # 【修改点 1】：初始化为 None 而不是 0.0
         self.measured_elevations = {"Yellow": None, "Orange": None, "Blue": None, "Green": None}
         self.calib_state = "IDLE"
         self.calib_pt1 = None
@@ -97,7 +96,6 @@ class ElevationRadarModule:
         except Exception as e:
             pass
 
-    # ================= 外部 API =================
     def set_enabled(self, enabled: bool):
         self.is_enabled = enabled
         if self.is_enabled and not self._thread_running:
@@ -163,9 +161,7 @@ class ElevationRadarModule:
         self.canvas.config(bg="black", cursor="arrow")
         self.canvas.delete("temp_calib")
 
-    # ================= 核心视觉循环 =================
     def _cv_process_loop(self):
-        # 1. 加载所有二值化模板 (提取透明通道)
         tpl_list = []
         tpl_dir = "templates/pnt"
         if os.path.exists(tpl_dir):
@@ -191,10 +187,8 @@ class ElevationRadarModule:
                     
                     candidates = []
                     
-                    # 【修改点 2】：每帧开始时，所有颜色默认高度初始化为 None
                     temp_elevations = {c: None for c in self.colors.keys()}
                     
-                    # 2. 仅处理当前被允许的颜色
                     for color_name, config in self.colors.items():
                         if color_name not in self.valid_colors:
                             continue
@@ -203,7 +197,7 @@ class ElevationRadarModule:
                         upper = np.array(config["upper"], dtype=np.uint8)
                         color_mask = cv2.inRange(frame_hsv, lower, upper)
                         
-                        # 3. 模板匹配
+                        # 模板匹配
                         for tpl in tpl_list:
                             res = cv2.matchTemplate(color_mask, tpl["img"], cv2.TM_CCOEFF_NORMED)
                             threshold = 0.8
@@ -217,7 +211,6 @@ class ElevationRadarModule:
                                     'hex': config["hex"]
                                 })
                                 
-                    # 4. NMS 去除重叠框 (距离过近的视为同一个)
                     final_targets = []
                     min_dist = 15
                     for c in candidates:
@@ -229,7 +222,7 @@ class ElevationRadarModule:
                         if not is_duplicate:
                             final_targets.append(c)
                             
-                    # 5. 计算绝对坐标及高低角比率
+                    # 计算绝对坐标及高低角比率
                     current_targets = []
                     for pt in final_targets:
                         pt_abs_x = self.monitor["left"] + pt['x']
@@ -249,7 +242,6 @@ class ElevationRadarModule:
                     self.measured_elevations = temp_elevations
                     self.latest_targets = current_targets
                     
-                    # 6. UI 渲染
                     if self.show_display and self.calib_state == "IDLE":
                         self.root.after(0, self._draw_markers, current_targets)
                         
@@ -278,10 +270,10 @@ class ElevationRadarModule:
             # self.canvas.create_polygon(ax-6, ay-8, ax+6, ay-8, ax, ay, fill=color, tags="elev_marker")
             # self.canvas.create_text(ax+15, ay, text=f"y:{pt['ratio']:.3f}", fill=color, font=("Consolas", 10, "bold"), anchor="w", tags="elev_marker")
 
-            # 1. 目标中心点 (2x2 像素)
+            # 目标中心点 (2x2 像素)
             self.canvas.create_rectangle(ax-1, ay-1, ax+1, ay+1, fill=color, outline="", tags="elev_marker")
             
-            # 2. 绘制斜线：向左下和右下延伸 (空白4像素，直线长7像素)
+            # 绘制斜线：向左下和右下延伸 (空白4像素，直线长7像素)
             # 左下斜线: 起点 (x-4, y+4) -> 终点 (x-12, y+12)
             self.canvas.create_line(ax-5, ay+5, ax-12, ay+12, fill=color, width=1, tags="elev_marker")
             

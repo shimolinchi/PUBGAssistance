@@ -16,7 +16,6 @@ class AutoMapDistanceAssistant:
         self.sh = screen_height
         self.config_file = config_file
         
-        # 1. 核心参数预载
         self.map_rect = None
         self.map_1km_pixels = 540
         self.colors = {}
@@ -31,11 +30,9 @@ class AutoMapDistanceAssistant:
             "Green": "#109166"
         }
 
-        # 2. 状态机: "IDLE" (待机) -> "WAIT_PLAYER" (等点选) -> "CALCULATING" (计算中)
         self.state = "IDLE"
         self.player_pt = None
 
-        # 3. 数据缓存与显示控制
         self.show_display = False  
         # 内部永久缓存的距离数据
         self.last_measured_dists = {c: None for c in self.color_order} 
@@ -70,7 +67,6 @@ class AutoMapDistanceAssistant:
             ctypes.windll.user32.SetWindowDisplayAffinity(hwnd, 17)
         except: pass
 
-    # ================= 显示控制与状态机 =================
     def set_display(self, show: bool):
         """完全与主程序的 N 键 (combat_hud_active) 同步"""
         self.show_display = show

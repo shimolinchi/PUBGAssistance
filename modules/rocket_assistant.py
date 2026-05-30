@@ -27,7 +27,6 @@ class RocketAssistant:
             "Blue": "#1A3EA3", "Green": "#109166"
         }
 
-        # ================= 从配置加载标定数据 =================
         self.calib_dists = []
         self.calib_ratios = []
         self.end_y = self.screen_height * 0.9 # 默认值
@@ -51,7 +50,6 @@ class RocketAssistant:
             except Exception as e:
                 print(f"[火箭筒助手] 配置加载失败: {e}")
 
-        # ================= 刻度尺 UI 坐标映射 =================
         self.center_x = self.screen_width / 2
         self.center_y = self.screen_height / 2
         self.line_length = self.end_y - self.center_y
@@ -126,13 +124,11 @@ class RocketAssistant:
         if not self._thread_running: return
         self.canvas.delete("rocket_hud")
         
-        # 1. 绘制基准白线 (从中心画到 end_y)
         self.canvas.create_line(self.center_x, self.center_y, self.center_x, self.end_y, 
                                 fill="white", width=1, tags="rocket_hud")
         
         h_line_width = 30 
         
-        # 2. 绘制计算出的每个颜色目标的标识
         for item in data:
             c_hex = item["color"]
             ratio = item["ratio"]
@@ -156,6 +152,5 @@ class RocketAssistant:
             pt_bot = (left_x - tri_w, target_y + tri_h/2)
             self.canvas.create_polygon(pt_tip, pt_top, pt_bot, fill=c_hex, outline="black", tags="rocket_hud")
             
-            # (可选) 渲染距离数字，如果在视野中心觉得乱，可以删除这一行
             self.canvas.create_text(left_x - tri_w - 5, target_y, text=f"{dist:.0f}m", 
                                     fill=c_hex, font=("Consolas", 12, "bold"), anchor="e", tags="rocket_hud")
