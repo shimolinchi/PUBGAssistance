@@ -463,7 +463,7 @@ class TacticalHub:
         if key_name == throw_key_main:
             if getattr(self, 'throwables_armed', False) and getattr(self, 'combat_hud_active', False):
                 self.throwables_active = True
-                self.root.after(0, self.throwables.activate_throw)
+                self.root.after(0, self.throwables.toggle_auto_throw)
 
     def on_key_release(self, key):
         try:
@@ -475,7 +475,7 @@ class TacticalHub:
         if key_name == throw_key_main:
             if getattr(self, 'throwables_active', False):
                 self.throwables_active = False
-                self.root.after(0, self.throwables.execute_throw)
+                # self.root.after(0, self.throwables.)
 
     def on_mouse_click(self, x, y, button, pressed):
 

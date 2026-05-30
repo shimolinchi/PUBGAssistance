@@ -8,7 +8,7 @@ import mss
 class HairTracker:
     """内部组件：十字弩/VSS 圆形瞄准镜追踪器 (线程安全版)"""
     
-    def __init__(self, screen_width, screen_height, show_debug=True):
+    def __init__(self, screen_width, screen_height, show_debug=False):
         self.sw = screen_width
         self.sh = screen_height
         self.show_debug = show_debug
