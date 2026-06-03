@@ -2245,5 +2245,65 @@
     "map_scales": {
         "minimap_100m_px": 65.0,
         "largemap_1km_px": 150.0
+    },
+    "recoil_settings": {
+        "fire_key": "end",
+        "recoil_delay": 0.02,
+        "weapons": {
+            "M416": {
+                "base": 10.0,
+                "auto_fire": false
+            },
+            "AKM": {
+                "base": 12.0,
+                "auto_fire": false
+            },
+            "SCARL": {
+                "base": 12.0,
+                "auto_fire": false
+            },
+            "AUG": {
+                "base": 11.0,
+                "auto_fire": false
+            },
+            "ACE32": {
+                "base": 10.0,
+                "auto_fire": false
+            },
+            "M762": {
+                "base": 12.0,
+                "auto_fire": false
+            },
+            "Groza": {
+                "base": 13.0,
+                "auto_fire": false
+            },
+            "Famas": {
+                "base": 12.0,
+                "auto_fire": false
+            },
+            "M16A4": {
+                "base": 11.0,
+                "auto_fire": true
+            },
+            "MK47": {
+                "base": 15.0,
+                "auto_fire": true
+            }
+        },
+        "stance_multipliers": {
+            "stand": 1.0,
+            "squat": 0.8,
+            "lie": 0.6
+        },
+        "scope_multipliers": {
+            "hip": 1.0,
+            "red_dot": 1.1,
+            "x2": 2.0,
+            "x3": 3.0,
+            "x4": 4.0,
+            "x6": 6.0,
+            "x8": 7.0
+        }
     }
 }
