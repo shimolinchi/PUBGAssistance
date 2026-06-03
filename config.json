@@ -2200,16 +2200,50 @@
             "height": 1079
         },
         "weapon_region": {
-            "left": 883,
-            "top": 931,
-            "width": 143,
-            "height": 50
+            "left": 891,
+            "top": 930,
+            "width": 138,
+            "height": 52
         },
         "stance_region": {
             "left": 703,
             "top": 984,
             "width": 42,
             "height": 44
+        },
+        "minimap_region": {
+            "left": 1428,
+            "top": 592,
+            "width": 459,
+            "height": 459
+        },
+        "largemap_region": {
+            "left": 288,
+            "top": 0,
+            "width": 1287,
+            "height": 1079
+        },
+        "elevation_region": {
+            "left": 899,
+            "top": 69,
+            "width": 124,
+            "height": 918
+        },
+        "compass_region": {
+            "left": 553,
+            "top": 0,
+            "width": 796,
+            "height": 77
+        },
+        "crosshair_region": {
+            "left": 641,
+            "top": 206,
+            "width": 661,
+            "height": 661
         }
+    },
+    "map_scales": {
+        "minimap_100m_px": 65.0,
+        "largemap_1km_px": 150.0
     }
 }

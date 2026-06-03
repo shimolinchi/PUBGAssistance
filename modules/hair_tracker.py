@@ -8,25 +8,22 @@ import mss
 class HairTracker:
     """内部组件：十字弩/VSS 圆形瞄准镜追踪器 (线程安全版)"""
     
-    def __init__(self, screen_width, screen_height, show_debug=False):
+    def __init__(self, screen_width, screen_height, show_debug=False, config_file="config.json"):
         self.sw = screen_width
         self.sh = screen_height
         self.show_debug = show_debug
+        self.config_file = config_file
         
-        # 兼容任意分辨率的 ROI 截取比例
-        left_ratio = 605 / 1920.0
-        top_ratio = 208 / 1080.0
-        width_ratio = (1299 - 605) / 1920.0
-        height_ratio = (878 - 208) / 1080.0
-        
-        # 强制转换为 int，防止 mss 底层因为浮点数报错
+        # 1. 默认兜底 ROI (兼容任意分辨率，防止 config 丢失)
         self.monitor = {
-            "top": int(self.sh * top_ratio),
-            "left": int(self.sw * left_ratio),
-            "width": int(self.sw * width_ratio),
-            "height": int(self.sh * height_ratio)
+            "top": int(self.sh * (208 / 1080.0)),
+            "left": int(self.sw * (605 / 1920.0)),
+            "width": int(self.sw * ((1299 - 605) / 1920.0)),
+            "height": int(self.sh * ((878 - 208) / 1080.0))
         }
         
+        # 2. 尝试从全局配置读取精准标定数据
+        self._load_config()
         
         # 强力填补黑洞的闭运算核
         self.close_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (21, 21))
@@ -38,6 +35,21 @@ class HairTracker:
         self.is_found = False
         self.is_enabled = False
         self._thread_running = False
+
+    def _load_config(self):
+        """从 config.json 读取视觉管理器的标定区域"""
+        import os, json
+        if os.path.exists(self.config_file):
+            try:
+                with open(self.config_file, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+                    regions = config.get("detection_regions", {})
+                    
+                    # 尝试读取我们在 RegionManager 中对应的名称
+                    if "crosshair_region" in regions:
+                        self.monitor = regions["crosshair_region"]
+            except:
+                pass
 
     def enable_module(self, enabled: bool):
         self.is_enabled = enabled

@@ -1,103 +1,105 @@
 import tkinter as tk
-from modules.elevation_radar import ElevationRadarModule
-import cv2
-import threading
-import time
+from elevation_radar import ElevationRadarModule
 
-class ElevationDebugTester:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("高低角模块独立测试台")
-        self.root.geometry("350x300")
+class ElevationTester:
+    def __init__(self):
+        self.root = tk.Tk()
+        self.root.title("垂直测高模块 - 独立测试台")
+        self.root.geometry("350x450")
         self.root.attributes("-topmost", True)
         self.root.configure(bg="#2C3E50")
-
-        sw = self.root.winfo_screenwidth()
-        sh = self.root.winfo_screenheight()
         
-        # 实例化高低角模块
-        self.elevation = ElevationRadarModule(self.root, sw, sh, fps=30)
+        # 获取当前屏幕分辨率
+        self.sw = self.root.winfo_screenwidth()
+        self.sh = self.root.winfo_screenheight()
         
-        self.is_running = False
-        self.debug_thread = None
+        # 实例化我们刚清理干净的测高模块
+        self.elevation = ElevationRadarModule(self.root, self.sw, self.sh)
+        
         self.init_ui()
+        
+        # 启动 UI 刷新循环
+        self.update_data_loop()
 
     def init_ui(self):
-        tk.Label(self.root, text="垂直测高视觉调试", fg="white", bg="#2C3E50", font=("Microsoft YaHei", 12, "bold")).pack(pady=10)
+        tk.Label(self.root, text="🏔️ 垂直测高雷达测试", fg="white", bg="#2C3E50", font=("Microsoft YaHei", 14, "bold")).pack(pady=15)
         
-        status_text = "状态: 已加载配置" if self.elevation.monitor else "状态: 请先标定屏幕标尺区域"
-        self.lbl_status = tk.Label(self.root, text=status_text, fg="#F1C40F", bg="#2C3E50")
-        self.lbl_status.pack(pady=5)
+        # ================= 控制面板 =================
+        self.frame_controls = tk.Frame(self.root, bg="#2C3E50")
+        self.frame_controls.pack(fill="x", padx=20, pady=10)
         
-        tk.Button(self.root, text="1. 手动框选标定区域", command=self.elevation.trigger_calibration, 
-                  bg="#3498DB", fg="white", font=("Microsoft YaHei", 10)).pack(fill="x", padx=30, pady=5)
-                  
-        self.btn_toggle = tk.Button(self.root, text="2. 启动测高 (含调试预览)", command=self.toggle_system, 
-                                    bg="#2ECC71", fg="white", font=("Microsoft YaHei", 10, "bold"))
-        self.btn_toggle.pack(fill="x", padx=30, pady=15)
+        self.btn_enable = tk.Button(self.frame_controls, text="▶️ 启动检测引擎 (OFF)", command=self.toggle_enable, bg="#E74C3C", fg="white", font=("Microsoft YaHei", 10, "bold"))
+        self.btn_enable.pack(fill="x", pady=5)
         
-        tk.Button(self.root, text="仅测试黄/蓝色 (模拟过滤)", command=self.test_filter, 
-                  bg="#9B59B6", fg="white").pack(pady=5)
-
-    def toggle_system(self):
-        if not self.elevation.monitor:
-            self.lbl_status.config(text="错误: 请先点击上方按钮标定区域!", fg="#E74C3C")
-            return
-
-        self.is_running = not self.is_running
+        self.btn_display = tk.Button(self.frame_controls, text="👀 显示屏幕标尺 (OFF)", command=self.toggle_display, bg="#7F8C8D", fg="white", font=("Microsoft YaHei", 10, "bold"))
+        self.btn_display.pack(fill="x", pady=5)
         
-        self.elevation.set_enabled(self.is_running)
-        self.elevation.set_display(self.is_running)
+        tk.Frame(self.root, height=2, bg="#34495E").pack(fill="x", pady=15)
         
-        if self.is_running:
-            self.btn_toggle.config(text="停止测高并关闭窗口", bg="#E74C3C")
-            self.lbl_status.config(text="状态: 模块运行中...", fg="#2ECC71")
+        # ================= 数据展示面板 =================
+        tk.Label(self.root, text="实时高度比率数据 (0.0 ~ 1.0)", fg="#BDC3C7", bg="#2C3E50", font=("Microsoft YaHei", 10)).pack()
+        
+        self.labels = {}
+        # UI 颜色映射
+        colors = {"Yellow": "#F1C40F", "Orange": "#E67E22", "Blue": "#3498DB", "Green": "#2ECC71"}
+        
+        for color_name, hex_code in colors.items():
+            frame = tk.Frame(self.root, bg="#2C3E50")
+            frame.pack(fill="x", padx=40, pady=5)
             
-            # 启动一个简易调试线程获取底层的Mask数据(仅用于显示)
-            self.debug_thread = threading.Thread(target=self._debug_loop, daemon=True)
-            self.debug_thread.start()
+            # 颜色名称标签
+            tk.Label(frame, text=f"{color_name}:", fg=hex_code, bg="#2C3E50", font=("Consolas", 12, "bold"), width=8, anchor="w").pack(side="left")
+            
+            # 数值显示标签
+            self.labels[color_name] = tk.Label(frame, text="None", fg="white", bg="#2C3E50", font=("Consolas", 12))
+            self.labels[color_name].pack(side="left", padx=10)
+
+    def toggle_enable(self):
+        """切换后台识别线程的状态"""
+        is_active = not self.elevation.is_enabled
+        self.elevation.set_enabled(is_active)
+        
+        if is_active:
+            self.btn_enable.config(text="⏹️ 停止检测引擎 (ON)", bg="#2ECC71")
         else:
-            self.btn_toggle.config(text="2. 启动测高 (含调试预览)", bg="#2ECC71")
-            self.lbl_status.config(text="状态: 已停止", fg="#F1C40F")
+            self.btn_enable.config(text="▶️ 启动检测引擎 (OFF)", bg="#E74C3C")
 
-    def test_filter(self):
-        """测试 API set_valid_colors 是否正常工作"""
-        print("[测试] 限制测高雷达仅检测黄色和蓝色")
-        self.elevation.set_valid_colors(["Yellow", "Blue"])
+    def toggle_display(self):
+        """切换游戏屏幕上标尺横线的显示状态"""
+        is_showing = not self.elevation.show_display
+        self.elevation.set_display(is_showing)
+        
+        if is_showing:
+            self.btn_display.config(text="👀 隐藏屏幕标尺 (ON)", bg="#3498DB")
+        else:
+            self.btn_display.config(text="👀 显示屏幕标尺 (OFF)", bg="#7F8C8D")
 
-    def _debug_loop(self):
-        import mss
-        import numpy as np
-        with mss.MSS() as sct:
-            while self.is_running:
-                try:
-                    if self.elevation.monitor:
-                        screenshot = sct.grab(self.elevation.monitor)
-                        frame_bgr = cv2.cvtColor(np.array(screenshot), cv2.COLOR_BGRA2BGR)
-                        frame_hsv = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2HSV)
-                        
-                        for color_name in self.elevation.valid_colors:
-                            config = self.elevation.colors[color_name]
-                            lower = np.array(config["lower"], dtype=np.uint8)
-                            upper = np.array(config["upper"], dtype=np.uint8)
-                            mask = cv2.inRange(frame_hsv, lower, upper)
-                            
-                            cv2.imshow(f"Elev Debug: {color_name}", mask)
-                        
-                        cv2.waitKey(1)
-                except: pass
-                time.sleep(0.05)
-        cv2.destroyAllWindows()
+    def update_data_loop(self):
+        """高频读取后台数据并刷新 UI"""
+        if self.elevation.is_enabled:
+            data = self.elevation.get_measured_elevations()
+            
+            for color_name, label in self.labels.items():
+                val = data.get(color_name)
+                if val is not None:
+                    # 识别到目标，显示绿色四位小数
+                    label.config(text=f"{val:.4f}", fg="#2ECC71")
+                else:
+                    # 未识别到目标，显示灰色 None
+                    label.config(text="None", fg="#7F8C8D")
+        else:
+            for label in self.labels.values():
+                label.config(text="None", fg="#7F8C8D")
+                
+        # 每 100 毫秒刷新一次 UI
+        self.root.after(100, self.update_data_loop)
+
+    def on_closing(self):
+        """安全退出"""
+        self.elevation.set_enabled(False)
+        self.root.destroy()
 
 if __name__ == "__main__":
-    root = tk.Tk()
-    app = ElevationDebugTester(root)
-    
-    def on_closing():
-        app.is_running = False
-        app.elevation.set_enabled(False)
-        cv2.destroyAllWindows()
-        root.destroy()
-        
-    root.protocol("WM_DELETE_WINDOW", on_closing)
-    root.mainloop()
+    app = ElevationTester()
+    app.root.protocol("WM_DELETE_WINDOW", app.on_closing)
+    app.root.mainloop()

@@ -51,23 +51,15 @@ POINT_CONFIG = {
 }
 
 class MapPointAssistant:
-    def __init__(self, root, config_file="config.json"):  # 【修改1】：将默认文件名改为统一的 config.json
+    def __init__(self, root, config_file="config.json"): 
         self.root = root
         self.config_file = config_file
-        self.monitor = self.load_config()
+        
+        self.monitor = None
+        self.map_data = {}
+        self.load_config()
         
         self.is_enabled = False
-        self.calib_state = "IDLE"
-        self.calib_pt1 = None
-
-        self.map_data = {}
-        if os.path.exists(config_file):
-            try:
-                with open(config_file, 'r', encoding='utf-8') as f:
-                    config = json.load(f)
-                    self.map_data = config.get("map_data", {})
-            except Exception as e:
-                print(f"[地图助手] 配置读取失败: {e}")
         
         # 核心状态：只管地图和尺寸
         self.current_map_name = "艾伦格 (Erangel)"
@@ -79,15 +71,18 @@ class MapPointAssistant:
         self._init_overlay()
 
     def load_config(self):
-        """加载统一配置，并只读取属于大地图的部分"""
         if os.path.exists(self.config_file):
             try:
                 with open(self.config_file, 'r', encoding='utf-8') as f:
-                    config_data = json.load(f)
-                    return config_data.get("map_rect") # 只读取 "map_rect" 条目
-            except: 
-                pass
-        return None
+                    config = json.load(f)
+                    
+                    self.map_data = config.get("map_data", {})
+                    
+                    regions = config.get("detection_regions", {})
+                    if "largemap_region" in regions:
+                        self.monitor = regions["largemap_region"]
+            except Exception as e:
+                print(f"[地图助手] 配置读取失败: {e}")
 
     def save_config(self):
         """保存配置：先读取原有全部配置，更新自己那部分，再写回，避免覆盖"""

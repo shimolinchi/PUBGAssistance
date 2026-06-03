@@ -39,39 +39,66 @@ class MinimapRadarModule:
     PUBG 小地图视觉雷达子模块
     负责：独立截屏、识别标点(基于HSV)、换算距离、管理防截图透明画板
     """
-    def __init__(self, root, config_file="minimap_config.json"):
-        self.root = root  
+    def __init__(self, root, screen_width, screen_height, config_file="config.json"):
+        self.root = root
+        self.sw = screen_width
+        self.sh = screen_height
         self.config_file = config_file
-        self.monitor = self.load_config()
         
+        self.monitor = None
+        self.minimap_100m_px = 100.0  # 小地图的 100m 比例尺
+        self.colors = {}
+        self.load_config()
+
+        # 固定 UI 渲染顺序与基础颜色
+        self.color_order = ["Yellow", "Orange", "Blue", "Green"]
+        self.base_colors = {
+            "Yellow": "#FBED21", 
+            "Orange": "#B3500D", 
+            "Blue": "#1A3EA3", 
+            "Green": "#109166"
+        }
+
+        self.state = "IDLE"
+        self.player_pt = None
+
         self.is_enabled = True     
-        self.show_display = True      
-        
+        self.show_display = True  
         self._thread_running = False
         self.radar_thread = None
-        self.latest_targets = []      
         
-        self.calib_state = "IDLE"
-        self.calib_pt1 = None
-        
+        # 内部永久缓存的距离数据
+        self.last_measured_dists = {c: None for c in self.color_order} 
+
         self.overlay = None
         self.canvas = None
         self._init_overlay()
 
-        self.measured_distance = {
-            "Yellow": 0.0,
-            "Orange": 0.0,
-            "Blue": 0.0,
-            "Green": 0.0
-        }
-
     def load_config(self):
+        """读取小地图区域和颜色"""
+        import os, json
         if os.path.exists(self.config_file):
             try:
-                with open(self.config_file, 'r') as f:
-                    return json.load(f).get("minimap_rect")
-            except: pass
-        return None
+                with open(self.config_file, 'r', encoding='utf-8') as f:
+                    config_data = json.load(f)
+                    
+                    # 1. 读取全局标定的区域
+                    regions = config_data.get("detection_regions", {})
+                    if "minimap_region" in regions:
+                        self.monitor = regions["minimap_region"]
+                        # 【神级兼容】：无缝衔接旧算法中的 "side" 变量！
+                        self.monitor["side"] = self.monitor["width"]
+                        self.map_rect = self.monitor  # 如果你旧代码用了 map_rect，也一并兼容
+                    
+                    # 2. 读取全局标定的比例尺
+                    scales = config_data.get("map_scales", {})
+                    if "minimap_100m_px" in scales:
+                        self.minimap_100m_px = scales["minimap_100m_px"]
+                        
+                    # 3. 读取颜色
+                    self.colors = config_data.get("minimap_colors", {})
+            except Exception as e:
+                print(f"[小地图自动测距] 配置文件读取失败: {e}")
 
     def save_config(self):
         with open(self.config_file, 'w') as f:

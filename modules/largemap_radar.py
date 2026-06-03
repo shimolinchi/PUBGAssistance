@@ -17,24 +17,22 @@ class AutoMapDistanceAssistant:
         self.config_file = config_file
         
         self.map_rect = None
-        self.map_1km_pixels = 540
+        self.map_1km_pixels = 540.0
         self.colors = {}
-        self.load_config()
-
+        
         # 固定 UI 渲染顺序与基础颜色
         self.color_order = ["Yellow", "Orange", "Blue", "Green"]
         self.base_colors = {
-            "Yellow": "#FBED21", 
-            "Orange": "#B3500D", 
-            "Blue": "#1A3EA3", 
-            "Green": "#109166"
+            "Yellow": "#FBED21", "Orange": "#B3500D", 
+            "Blue": "#1A3EA3", "Green": "#109166"
         }
+        
+        self.load_config()
 
         self.state = "IDLE"
         self.player_pt = None
 
         self.show_display = False  
-        # 内部永久缓存的距离数据
         self.last_measured_dists = {c: None for c in self.color_order} 
 
         self.overlay = None
@@ -42,14 +40,20 @@ class AutoMapDistanceAssistant:
         self._init_overlay()
 
     def load_config(self):
-        """读取大地图数据和颜色阈值"""
         if os.path.exists(self.config_file):
             try:
                 with open(self.config_file, 'r', encoding='utf-8') as f:
-                    config_data = json.load(f)
-                    self.map_rect = config_data.get("map_rect")
-                    self.map_1km_pixels = config_data.get("map_1km_pixels", 540)
-                    self.colors = config_data.get("minimap_colors", {})
+                    config = json.load(f)
+                    
+                    regions = config.get("detection_regions", {})
+                    if "largemap_region" in regions:
+                        self.map_rect = regions["largemap_region"]
+                        
+                    scales = config.get("map_scales", {})
+                    if "largemap_1km_px" in scales:
+                        self.map_1km_pixels = scales["largemap_1km_px"]
+                        
+                    self.colors = config.get("minimap_colors", {})
             except Exception as e:
                 print(f"[大地图自动测距] 配置文件读取失败: {e}")
 

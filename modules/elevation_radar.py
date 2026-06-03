@@ -22,7 +22,7 @@ class ElevationRadarModule:
         self.fps = fps
         self.config_file = config_file
         
-        # 默认颜色配置 (保底方案，优先从 config.json 读取)
+        # 默认颜色配置
         self.default_colors = {
             "Yellow": {"lower": [26, 150, 180], "upper": [29, 250, 250], "hex": "#E3D43C"},
             "Orange": {"lower": [11, 200, 140], "upper": [13, 255, 255], "hex": "#B3500D"},
@@ -30,10 +30,10 @@ class ElevationRadarModule:
             "Green": {"lower": [76, 120, 100], "upper": [84, 255, 255], "hex": "#109166"}
         }
 
-        # 加载配置
-        self.monitor, self.colors = self.load_config()
+        self.monitor = None
+        self.colors = self.default_colors
+        self.load_config()
         
-        # 默认允许检测所有颜色集合
         self.valid_colors = set(self.colors.keys())
         
         self.is_enabled = False
@@ -43,52 +43,37 @@ class ElevationRadarModule:
         
         self.latest_targets = []
         self.measured_elevations = {"Yellow": None, "Orange": None, "Blue": None, "Green": None}
-        self.calib_state = "IDLE"
-        self.calib_pt1 = None
         
         self.overlay = None
         self.canvas = None
         self._init_overlay()
 
     def load_config(self):
-        monitor = None
-        colors = self.default_colors
+        import os, json
         if os.path.exists(self.config_file):
             try:
                 with open(self.config_file, 'r', encoding='utf-8') as f:
-                    config_data = json.load(f)
-                    monitor = config_data.get("elevation_rect")
-                    colors = config_data.get("elevation_colors", self.default_colors)
-            except: 
-                pass
-        return monitor, colors
-
-    def save_config(self):
-        config_data = {}
-        if os.path.exists(self.config_file):
-            try:
-                with open(self.config_file, 'r', encoding='utf-8') as f:
-                    config_data = json.load(f)
-            except: 
-                pass
-        
-        config_data["elevation_rect"] = self.monitor
-        config_data["elevation_colors"] = self.colors
-        
-        with open(self.config_file, 'w', encoding='utf-8') as f:
-            json.dump(config_data, f, indent=4, ensure_ascii=False)
+                    config = json.load(f)
+                    
+                    # 从全局区域读取
+                    regions = config.get("detection_regions", {})
+                    if "elevation_region" in regions:
+                        self.monitor = regions["elevation_region"]
+                        
+                    # 颜色还是保留原来的根节点
+                    self.colors = config.get("elevation_colors", self.default_colors)
+            except: pass
 
     def _init_overlay(self):
+        import ctypes
+        import tkinter as tk
         self.overlay = tk.Toplevel(self.root)
         self.overlay.attributes("-fullscreen", True, "-topmost", True, "-transparentcolor", "black")
         self.overlay.overrideredirect(True)
         self.canvas = tk.Canvas(self.overlay, bg="black", highlightthickness=0)
         self.canvas.pack(fill="both", expand=True)
         
-        self.canvas.bind("<Button-1>", self._on_canvas_left_click)
-        self.canvas.bind("<Button-3>", self._on_canvas_right_click)
-        
-        # 窗口隐身
+        # 窗口隐身 (防录屏/防系统捕捉)
         self.overlay.update_idletasks()
         try:
             hwnd = int(self.overlay.frame(), 16)
@@ -97,6 +82,8 @@ class ElevationRadarModule:
             pass
 
     def set_enabled(self, enabled: bool):
+        import threading
+        import time
         self.is_enabled = enabled
         if self.is_enabled and not self._thread_running:
             self._thread_running = True
@@ -107,7 +94,6 @@ class ElevationRadarModule:
             time.sleep(0.1)
             self.canvas.delete("elev_marker")
             self.latest_targets = []
-            # 停止检测时，也将数据重置为 None
             self.measured_elevations = {c: None for c in self.colors.keys()}
 
     def set_display(self, show: bool):
@@ -116,7 +102,6 @@ class ElevationRadarModule:
             self.canvas.delete("elev_marker")
 
     def set_valid_colors(self, colors):
-        """接收外部传来的有效颜色列表，并更新集合"""
         if colors is not None:
             self.valid_colors = set(colors)
         else:
@@ -125,43 +110,14 @@ class ElevationRadarModule:
     def get_measured_elevations(self):
         return self.measured_elevations
 
-    def trigger_calibration(self):
-        self.calib_state = "CALIB_1"
-        self.overlay.attributes("-transparentcolor", "")
-        self.overlay.attributes("-alpha", 0.4)
-        self.canvas.config(bg="#111111", cursor="crosshair")
-        self.canvas.delete("all")
-        print("[高低角模块] 请左键点击标尺区域左上角...")
-
-    def _on_canvas_left_click(self, event):
-        if self.calib_state == "CALIB_1":
-            self.calib_pt1 = (event.x, event.y)
-            self.calib_state = "CALIB_2"
-            self.canvas.create_oval(event.x-3, event.y-3, event.x+3, event.y+3, fill="red", tags="temp_calib")
-            print("[高低角模块] 请左键点击标尺区域右下角...")
-        elif self.calib_state == "CALIB_2":
-            x1, y1 = self.calib_pt1
-            x2, y2 = event.x, event.y
-            left, top = min(x1, x2), min(y1, y2)
-            width, height = abs(x2 - x1), abs(y2 - y1)
-            
-            self.monitor = {"top": top, "left": left, "width": width, "height": height}
-            self.save_config()
-            self._exit_calibration()
-            print(f"[高低角模块] 标定完成! 区域: {self.monitor}")
-
-    def _on_canvas_right_click(self, event):
-        if self.calib_state != "IDLE":
-            self._exit_calibration()
-
-    def _exit_calibration(self):
-        self.calib_state = "IDLE"
-        self.overlay.attributes("-alpha", 1.0)
-        self.overlay.attributes("-transparentcolor", "black")
-        self.canvas.config(bg="black", cursor="arrow")
-        self.canvas.delete("temp_calib")
-
     def _cv_process_loop(self):
+        import cv2
+        import mss
+        import numpy as np
+        import time
+        import os
+        import math
+        
         tpl_list = []
         tpl_dir = "templates/pnt"
         if os.path.exists(tpl_dir):
@@ -186,7 +142,6 @@ class ElevationRadarModule:
                     frame_hsv = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2HSV)
                     
                     candidates = []
-                    
                     temp_elevations = {c: None for c in self.colors.keys()}
                     
                     for color_name, config in self.colors.items():
@@ -197,7 +152,6 @@ class ElevationRadarModule:
                         upper = np.array(config["upper"], dtype=np.uint8)
                         color_mask = cv2.inRange(frame_hsv, lower, upper)
                         
-                        # 模板匹配
                         for tpl in tpl_list:
                             res = cv2.matchTemplate(color_mask, tpl["img"], cv2.TM_CCOEFF_NORMED)
                             threshold = 0.8
@@ -206,7 +160,7 @@ class ElevationRadarModule:
                             for pt in zip(*loc[::-1]):
                                 candidates.append({
                                     'x': pt[0] + (tpl["w"] // 2),
-                                    'y': pt[1] + tpl["h"], # 锚定下方中心点
+                                    'y': pt[1] + tpl["h"], 
                                     'color_name': color_name,
                                     'hex': config["hex"]
                                 })
@@ -222,7 +176,6 @@ class ElevationRadarModule:
                         if not is_duplicate:
                             final_targets.append(c)
                             
-                    # 计算绝对坐标及高低角比率
                     current_targets = []
                     for pt in final_targets:
                         pt_abs_x = self.monitor["left"] + pt['x']
@@ -230,7 +183,6 @@ class ElevationRadarModule:
                         
                         ratio = pt_abs_y / self.screen_height
                         
-                        # 检测到了目标，才会将其对应颜色的字典值赋为具体的数字
                         temp_elevations[pt['color_name']] = ratio
                         current_targets.append({
                             'x': pt_abs_x, 
@@ -242,13 +194,13 @@ class ElevationRadarModule:
                     self.measured_elevations = temp_elevations
                     self.latest_targets = current_targets
                     
-                    if self.show_display and self.calib_state == "IDLE":
+                    # 【核心修复】：移除了 calib_state 的判定，直接使用 show_display
+                    if self.show_display:
                         self.root.after(0, self._draw_markers, current_targets)
                         
                 except Exception as e:
                     print(f"[高低角模块错误] {e}")
                     
-                # 帧率控制
                 elapsed = time.time() - start_time
                 sleep_time = max(0, (1.0 / self.fps) - elapsed)
                 time.sleep(sleep_time)
