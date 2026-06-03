@@ -2,12 +2,13 @@ import cv2
 import os
 import numpy as np
 import mss
+import time
 
 class WeaponIdentifier:
     def __init__(self, region_manager, templates_dir="templates/weapons", threshold=0.50):
         self.rm = region_manager
         self.templates_dir = templates_dir
-        # 将匹配成功阈值下调至 50% (0.50)
+        # 线条匹配的得分通常比实心块低，建议从 0.60 开始测试
         self.match_threshold = threshold
         
         self.templates = {}
@@ -16,10 +17,21 @@ class WeaponIdentifier:
         self._load_templates()
 
     def _preprocess_image(self, img_bgr):
+        """
+        统一预处理管线：转灰度 -> 高斯模糊(去噪) -> Canny轮廓提取 -> 膨胀(加粗线条)
+        """
+        # 1. 转为灰度图
         gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
+        
+        # 2. 稍微模糊一下，过滤掉 UI 上的细小噪点和锯齿
         blurred = cv2.GaussianBlur(gray, (3, 3), 0)
+        
+        # 3. Canny 边缘检测提取轮廓
+        # 这两个数字(50, 150)是高低阈值。如果提取出的线条太乱，可以提高这两个值(如 80, 200)
         edges = cv2.Canny(blurred, 50, 150)
         
+        # 4. (可选增强) 膨胀操作：把 1 像素宽的细线加粗成 2 像素宽
+        # 这样在模板匹配时，允许有 1-2 个像素的错位，极大提高容错率
         kernel = np.ones((2, 2), np.uint8)
         edges_dilated = cv2.dilate(edges, kernel, iterations=1)
         
@@ -57,6 +69,7 @@ class WeaponIdentifier:
                             
                         processed_tpl = self._preprocess_image(cropped)
                         
+                        # 因为线条像素少，把非空验证阈值降到 5
                         if cv2.countNonZero(processed_tpl) > 5:
                             self.templates[weapon_name].append(processed_tpl)
                         else:
@@ -75,6 +88,7 @@ class WeaponIdentifier:
             img_bgr = cv2.cvtColor(np.array(screenshot), cv2.COLOR_BGRA2BGR)
             current_img = self._preprocess_image(img_bgr)
             
+            # 防黑洞机制：截图中没有提取到任何线条
             if cv2.countNonZero(current_img) < 5:
                 return None, 0.0, current_img
             
