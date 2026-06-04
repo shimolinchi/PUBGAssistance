@@ -24,8 +24,8 @@ class ThrowablesAssistant:
         self.fps = fps
 
         # 获取屏幕尺寸
-        self.sw = self.root.winfo_screenwidth()
-        self.sh = self.root.winfo_screenheight()
+        self.sw = self.region_manager.real_w
+        self.sh = self.region_manager.real_h
 
         # 状态控制
         self.is_enabled = False

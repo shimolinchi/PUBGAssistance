@@ -2,19 +2,51 @@ import cv2
 import os
 import numpy as np
 import mss
+import time
+import threading
 
 class GestureIdentifier:
     """
     姿势识别中枢 (掩码遮罩匹配版)
     通过识别左下角姿态图标的线条轮廓，判断玩家姿势。
     """
-    def __init__(self, region_manager, templates_dir="templates/gestures", threshold=0.50):
+    def __init__(self, region_manager, templates_dir="templates/gestures", threshold=0.70, fps=30):
         self.rm = region_manager
         self.templates_dir = templates_dir
         self.match_threshold = threshold
-        self.templates = {}  # 结构: {name: [{"tpl": img, "mask": mask}, ...]}
+        self.fps = fps
+        self.templates = {}
         self.gesture_names = []
+        self._enabled = False
+        self._thread = None
+        self._stop = False
+        self._callback = None
         self._load_templates()
+
+    def set_enabled(self, enabled: bool, callback=None):
+        self._enabled = enabled
+        if callback:
+            self._callback = callback
+        if enabled and (self._thread is None or not self._thread.is_alive()):
+            self._stop = False
+            self._thread = threading.Thread(target=self._run, daemon=True)
+            self._thread.start()
+        elif not enabled and self._thread:
+            self._stop = True
+            if self._thread.is_alive():
+                self._thread.join(timeout=1)
+            self._thread = None
+
+    def _run(self):
+        with mss.mss() as sct:
+            while not self._stop and self._enabled:
+                start = time.time()
+                gesture, score, _ = self.identify_current_gesture(sct)
+                if self._callback:
+                    self._callback(gesture, score)
+                elapsed = time.time() - start
+                sleep = max(0, (1.0 / self.fps) - elapsed)
+                time.sleep(sleep)
 
     def _preprocess_image(self, img_bgr):
         """统一预处理管线：转灰度 -> 高斯模糊 -> Canny -> 膨胀加粗线条"""

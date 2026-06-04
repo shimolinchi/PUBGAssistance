@@ -127,8 +127,10 @@
     },
     "hotkeys": {
         "throw": "v",
-        "toggle_hud": "<ctrl>+<shift>+<space>",
-        "measure_map": "<shift>+<ctrl>+<tab>"
+        "toggle_display": "<ctrl>+<shift>+<space>",
+        "measure_map": "<f1>",
+        "toggle_recoil": "<ctrl>+<shift>+<tab>",
+        "toggle_weapon_detection": "<f2>"
     },
     "throwables_config": {
         "calib_dists": [
@@ -2274,10 +2276,10 @@
             "height": 77
         },
         "crosshair_region": {
-            "left": 641,
-            "top": 206,
-            "width": 661,
-            "height": 661
+            "left": 628,
+            "top": 201,
+            "width": 676,
+            "height": 674
         }
     },
     "map_scales": {
@@ -2301,6 +2303,10 @@
                 "auto_fire": false
             },
             "AUG": {
+                "base": 11.0,
+                "auto_fire": false
+            },
+            "K2": {
                 "base": 11.0,
                 "auto_fire": false
             },
@@ -2377,11 +2383,11 @@
         "scope_multipliers": {
             "hip": 1.0,
             "red_dot": 1.1,
-            "x2": 2.0,
-            "x3": 3.0,
-            "x4": 4.0,
-            "x6": 6.0,
-            "x8": 7.0
+            "x2": 1.5,
+            "x3": 2.2,
+            "x4": 3.0,
+            "x6": 4.0,
+            "x8": 5.0
         }
     }
 }

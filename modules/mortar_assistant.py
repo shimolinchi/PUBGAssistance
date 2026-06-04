@@ -201,25 +201,54 @@ class MortarAssistant:
 
                 hud_data.append((text, bg_color))
 
-            self.root.after(0, self._render_hud, panel_x, panel_y, box_width, panel_height, hud_data)
+            # self.root.after(0, self._render_hud, panel_x, panel_y, box_width, panel_height, hud_data)
+            self.root.after(0, self._render_hud, hud_data)
 
             elapsed = time.time() - start_time
             sleep_time = max(0, (1.0 / self.fps) - elapsed)
             time.sleep(sleep_time)
 
-    def _render_hud(self, start_x, start_y, box_w, box_h, data):
-        if not self._thread_running:
-            return
+    def _dim_color(self, hex_color, alpha_ratio=0.2):
+        hex_color = hex_color.lstrip('#')
+        r, g, b = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+        return f"#{int(r*alpha_ratio):02x}{int(g*alpha_ratio):02x}{int(b*alpha_ratio):02x}"
+
+    def _draw_rounded_rect(self, x1, y1, x2, y2, radius, **kwargs):
+        points = [x1+radius, y1, x2-radius, y1, x2, y1, x2, y1+radius,
+                  x2, y2-radius, x2, y2, x2-radius, y2, x1+radius, y2,
+                  x1, y2, x1, y2-radius, x1, y1+radius, x1, y1]
+        self.canvas.create_polygon(points, smooth=True, **kwargs)
+
+    def _render_hud(self, data):
         self.canvas.delete("hud")
-        text_color = "#CCCCCC"
+        if not self._thread_running or not self.is_enabled:
+            return
+
+        box_w, box_h, spacing = 105, 50, 15
+        total_width = 4 * box_w + 3 * spacing
+        
+        # X坐标起点，与大地图模块完全一致
+        start_x = self.screen_width - total_width - 25
+        
+        # Y坐标起点，在大地图模块正下方
+        # 大地图是 self.sh * 0.465 - box_h - 15，这里刚好衔接
+        start_y = self.screen_height * 0.465 
+
         for i, (text, bg_color) in enumerate(data):
-            x1 = start_x + i * box_w
+            x1 = start_x + i * (box_w + spacing)
             y1 = start_y
             x2 = x1 + box_w
             y2 = y1 + box_h
-            self._draw_rounded_rect(x1, y1, x2, y2, radius=8, fill=bg_color, tags="hud")
-            cx = x1 + box_w / 2
-            cy = y1 + box_h / 2
-            font_size = 12 if "m" in text else 10
-            self.canvas.create_text(cx, cy, text=text, fill=text_color,
-                                    font=("Microsoft YaHei", font_size, "bold"), tags="hud")
+
+            # 绘制完全相同的 15px 圆角矩形
+            self._draw_rounded_rect(x1, y1, x2, y2, radius=15, fill=bg_color, tags="hud")
+            
+            # 判断字体颜色和大小（未获取到距离时灰色，获取到时白色）
+            font_size = 14 if text != "---" and "距离过近" not in text else 12
+            text_color = "#FFFFFF" if text != "---" else "#7F8C8D"
+            
+            self.canvas.create_text(x1 + box_w/2, y1 + box_h/2, 
+                                    text=text, 
+                                    fill=text_color, 
+                                    font=("Microsoft YaHei", font_size, "bold"), 
+                                    tags="hud")

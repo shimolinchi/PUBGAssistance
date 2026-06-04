@@ -12,10 +12,11 @@ class RocketAssistant:
     火箭筒/榴弹发射器 战术标尺辅助模块
     读取小地图距离，通过三次多项式自动拟合数据，在屏幕中心下方渲染动态刻度线。
     """
-    def __init__(self, root, screen_width, screen_height, minimap_module, fps=30, config_file="config.json"):
+    def __init__(self, root, region_manager, minimap_module, fps=30, config_file="config.json"):
         self.root = root
-        self.screen_width = screen_width
-        self.screen_height = screen_height
+        self.region_manager = region_manager
+        self.screen_width = region_manager.real_w
+        self.screen_height = region_manager.real_h
         self.fps = fps
         self.minimap = minimap_module          # 小地图雷达模块实例
         
@@ -102,7 +103,7 @@ class RocketAssistant:
         """启动/停止整个火箭筒辅助系统（同时控制小地图雷达）"""
         self.is_enabled = enable
         # 同步控制小地图雷达的启停
-        self.minimap.set_enabled(enable)
+        # self.minimap.set_enabled(enable)
 
         if self.is_enabled and not self._thread_running:
             self._thread_running = True

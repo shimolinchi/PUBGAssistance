@@ -185,6 +185,13 @@ class RegionManager:
         calib_win.start_y = -1
         calib_win.shape_id = None
 
+        # 右键取消校准（不保存任何数据，直接关闭窗口）
+        def on_cancel(event):
+            calib_win.destroy()
+            if self.show_debug:
+                self.debug_overlay.deiconify()
+                self._draw_debug_regions()
+
         def on_mouse_down(event):
             calib_win.start_x = event.x
             calib_win.start_y = event.y
@@ -252,3 +259,4 @@ class RegionManager:
         canvas.bind("<ButtonPress-1>", on_mouse_down)
         canvas.bind("<B1-Motion>", on_mouse_drag)
         canvas.bind("<ButtonRelease-1>", on_mouse_up)
+        canvas.bind("<Button-3>", on_cancel)   # 新增右键取消

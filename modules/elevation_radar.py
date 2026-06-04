@@ -15,8 +15,8 @@ class ElevationRadarModule:
         self.region_manager = region_manager
         self.fps = fps
         self.config_file = config_file
-        self.screen_height = self.root.winfo_screenheight()
-        self.screen_width = self.root.winfo_screenwidth()
+        self.screen_height = self.region_manager.real_h
+        self.screen_width = self.region_manager.real_w
 
         self.default_colors = {
             "Yellow": {"lower": [26, 150, 180], "upper": [29, 250, 250], "hex": "#E3D43C"},

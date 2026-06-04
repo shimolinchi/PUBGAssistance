@@ -33,7 +33,17 @@ class RecoilControlModule:
         # === 配置字典 (系数表) ===
         self.weapon_configs = {}
         self.stance_multipliers = {"stand": 1.0, "squat": 0.8, "lie": 0.6}
-        self.scope_multipliers = {"hip": 1.0, "red_dot": 1.2, "x3": 3.0, "x4": 4.0, "x6": 6.0}
+        self.scope_multipliers = {
+            "hip": 1.0,
+            "iron": 1.0,
+            "red_dot": 1.2,
+            "holographic": 1.2,
+            "x2": 2.0,
+            "x3": 3.0,
+            "x4": 4.0,
+            "x6": 6.0,
+            "x8": 8.0
+        }
         
         self._load_config()
         
@@ -77,11 +87,8 @@ class RecoilControlModule:
         """如果没配置，生成一份默认数据（方便测试）"""
         self.weapon_configs = {
             "M416": {"base": 10.0, "auto_fire": False},
-            "AKM": {"base": 12.0, "auto_fire": False},
-            "M16A4": {"base": 11.0, "auto_fire": True}, # 必须连发
-            "SKS": {"base": 15.0, "auto_fire": True}
         }
-        self.save_config()
+        # self.save_config()
 
     def save_config(self):
         """将当前的压枪参数写入统一配置文件"""
@@ -117,7 +124,6 @@ class RecoilControlModule:
     def set_enabled(self, enabled: bool):
         """总开关"""
         self.is_enabled = enabled
-        print(f"[压枪模块] 状态: {'开启' if enabled else '关闭'}")
 
     def update_weapon(self, weapon_name):
         """更新枪械"""
@@ -139,7 +145,10 @@ class RecoilControlModule:
             self._recalculate_strength()
 
     def update_scope(self, scope):
-        """更新倍镜: hip, red_dot, x3, x4..."""
+        # 如果 scope 是纯数字（如 "6"），转换为 "x6"
+        if scope not in self.scope_multipliers:
+            if scope.isdigit():
+                scope = f"x{scope}"
         if scope in self.scope_multipliers and scope != self.current_scope:
             self.current_scope = scope
             self._recalculate_strength()

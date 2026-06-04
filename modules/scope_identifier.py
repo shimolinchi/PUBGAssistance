@@ -48,15 +48,15 @@ class ScopeIdentifier:
         # ========================================================
         
         # 4. 提取极其干净的 1 像素边缘
-        edges = cv2.Canny(blurred, 30, 100)
+        edges = cv2.Canny(blurred, 20, 100)
         
         # ================== 新增：轮廓加粗至 2 像素 ==================
         # 使用 2x2 的核进行膨胀，将 1 像素的细线变成 2 像素宽的粗线
         # 这能极大地吸收人物呼吸、准星轻微晃动带来的像素错位
         dilate_kernel = np.ones((2, 2), np.uint8)
-        edges_2px = cv2.dilate(edges, dilate_kernel, iterations=1)
+        edges = cv2.dilate(edges, dilate_kernel, iterations=1)
         
-        return edges_2px
+        return edges
 
     def _load_templates(self):
         print(f"[倍镜识别] 正在加载掩码轮廓模板...")

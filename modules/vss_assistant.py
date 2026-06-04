@@ -7,7 +7,7 @@ import json
 import os
 import ctypes
 
-from hair_tracker import HairTracker
+from modules.hair_tracker import HairTracker
 
 class VssAssistant:
     """PUBG VSS 专属战术助手 (对外主类)"""

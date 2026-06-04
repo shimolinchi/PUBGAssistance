@@ -3,18 +3,50 @@ import os
 import numpy as np
 import mss
 import time
+import threading
 
 class WeaponIdentifier:
-    def __init__(self, region_manager, templates_dir="templates/weapons", threshold=0.55):
+
+    def __init__(self, region_manager, templates_dir="templates/weapons", threshold=0.55, fps=30):
         self.rm = region_manager
         self.templates_dir = templates_dir
-        # 因为带了精准掩码，排除了背景干扰，分数会更纯净，建议 0.55 或 0.60 左右
         self.match_threshold = threshold
+        self.fps = fps
         
         self.templates = {}
         self.weapon_names = []
-        
+
+        self._enabled = False
+        self._thread = None
+        self._stop = False
+        self._callback = None
+
         self._load_templates()
+    
+    def set_enabled(self, enabled: bool, callback=None):
+        self._enabled = enabled
+        if callback:
+            self._callback = callback
+        if enabled and (self._thread is None or not self._thread.is_alive()):
+            self._stop = False
+            self._thread = threading.Thread(target=self._run, daemon=True)
+            self._thread.start()
+        elif not enabled and self._thread:
+            self._stop = True
+            if self._thread.is_alive():
+                self._thread.join(0.1)   # 最多等待0.1秒，不阻塞
+            self._thread = None
+
+    def _run(self):
+        with mss.mss() as sct:
+            while not self._stop and self._enabled:
+                start = time.time()
+                weapon, score, _ = self.identify_current_weapon(sct)
+                if self._callback:
+                    self._callback(weapon, score)
+                elapsed = time.time() - start
+                sleep = max(0, (1.0 / self.fps) - elapsed)
+                time.sleep(sleep)
 
     def _preprocess_image(self, img_bgr):
         """
@@ -84,6 +116,8 @@ class WeaponIdentifier:
         print("[武器识别] 掩码轮廓模板加载完毕。")
 
     def identify_current_weapon(self, sct: mss.mss):
+        if not self._enabled:
+            return None, 0.0, None
         weapon_region_real = self.rm.get_real_region("weapon_region")
         weapon_region_base = self.rm.get_templates_region("weapon_region")
         
