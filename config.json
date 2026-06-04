@@ -343,8 +343,44 @@
             0.98,
             1.02
         ],
-        "fpp_dists": [30.67, 41.5, 52.3, 63.1, 73.9, 84.7, 95.5, 106.3, 117.1, 127.9, 138.7, 149.5, 160.3, 171.1, 181.9, 192.7, 203.5],
-        "fpp_elevations": [0.38, 0.42, 0.46, 0.5, 0.54, 0.58, 0.62, 0.66, 0.7, 0.74, 0.78, 0.82, 0.86, 0.9, 0.94, 0.98, 1.02]
+        "fpp_dists": [
+            30.67,
+            41.5,
+            52.3,
+            63.1,
+            73.9,
+            84.7,
+            95.5,
+            106.3,
+            117.1,
+            127.9,
+            138.7,
+            149.5,
+            160.3,
+            171.1,
+            181.9,
+            192.7,
+            203.5
+        ],
+        "fpp_elevations": [
+            0.38,
+            0.42,
+            0.46,
+            0.5,
+            0.54,
+            0.58,
+            0.62,
+            0.66,
+            0.7,
+            0.74,
+            0.78,
+            0.82,
+            0.86,
+            0.9,
+            0.94,
+            0.98,
+            1.02
+        ]
     },
     "map_data": {
         "艾伦格 (Erangel)": {
@@ -2202,16 +2238,16 @@
             "height": 1079
         },
         "weapon_region": {
-            "left": 891,
-            "top": 930,
-            "width": 138,
-            "height": 52
+            "left": 880,
+            "top": 923,
+            "width": 157,
+            "height": 59
         },
         "stance_region": {
-            "left": 703,
-            "top": 984,
-            "width": 42,
-            "height": 44
+            "left": 701,
+            "top": 971,
+            "width": 48,
+            "height": 59
         },
         "minimap_region": {
             "left": 1428,
@@ -2291,6 +2327,46 @@
             "MK47": {
                 "base": 15.0,
                 "auto_fire": true
+            },
+            "Tommy": {
+                "base": 8.0,
+                "auto_fire": false
+            },
+            "UMP": {
+                "base": 8.0,
+                "auto_fire": false
+            },
+            "UZI": {
+                "base": 9.0,
+                "auto_fire": false
+            },
+            "P90": {
+                "base": 4.0,
+                "auto_fire": false
+            },
+            "MP5K": {
+                "base": 10.0,
+                "auto_fire": false
+            },
+            "Vector": {
+                "base": 13.0,
+                "auto_fire": false
+            },
+            "MP9": {
+                "base": 9.0,
+                "auto_fire": false
+            },
+            "JS9": {
+                "base": 9.0,
+                "auto_fire": false
+            },
+            "MG3": {
+                "base": 8.0,
+                "auto_fire": false
+            },
+            "M249": {
+                "base": 9.0,
+                "auto_fire": false
             }
         },
         "stance_multipliers": {

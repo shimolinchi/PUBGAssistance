@@ -11,28 +11,25 @@ class WeaponTester:
     def __init__(self):
         self.root = tk.Tk()
         self.root.title("武器识别中枢 - 测试台")
-        self.root.geometry("350x400")
+        self.root.geometry("380x420")
         self.root.attributes("-topmost", True)
         self.root.configure(bg="#2C3E50")
         
-        # 设置识别帧率
         self.fps = 30
-        
         self.rm = RegionManager(self.root)
-        # 实例化时阈值设为 0.50
-        self.weapon_id = WeaponIdentifier(self.rm, threshold=0.50)
+        self.weapon_id = WeaponIdentifier(self.rm, threshold=0.55)
         
         self.is_detecting = False
         self.detect_thread = None
         self.init_ui()
 
     def init_ui(self):
-        tk.Label(self.root, text="🔫 武器视觉识别测试", fg="white", bg="#2C3E50", font=("Microsoft YaHei", 14, "bold")).pack(pady=15)
+        tk.Label(self.root, text="🔫 武器带掩码视觉识别", fg="white", bg="#2C3E50", font=("Microsoft YaHei", 14, "bold")).pack(pady=15)
         
         self.frame_controls = tk.Frame(self.root, bg="#2C3E50")
         self.frame_controls.pack(fill="x", padx=20, pady=10)
         
-        self.btn_detect = tk.Button(self.frame_controls, text=f"▶️ 开始实时识别 (包含视觉监控 - {self.fps}FPS)", command=self.toggle_detection, bg="#E74C3C", fg="white", font=("Microsoft YaHei", 10, "bold"))
+        self.btn_detect = tk.Button(self.frame_controls, text=f"▶️ 开始实时掩码识别 ({self.fps}FPS)", command=self.toggle_detection, bg="#E74C3C", fg="white", font=("Microsoft YaHei", 10, "bold"))
         self.btn_detect.pack(fill="x", pady=5)
         
         tk.Frame(self.root, height=2, bg="#34495E").pack(fill="x", pady=15)
@@ -47,45 +44,41 @@ class WeaponTester:
     def toggle_detection(self):
         self.is_detecting = not self.is_detecting
         if self.is_detecting:
-            self.btn_detect.config(text=f"⏹️ 停止实时识别 (关闭监控 - {self.fps}FPS)", bg="#2ECC71")
+            self.btn_detect.config(text=f"⏹️ 停止实时识别 (关闭监控)", bg="#2ECC71")
             self.lbl_weapon.config(text="扫描中...", fg="#F1C40F")
-            # 确保之前的线程已完全停止再启动
             self.detect_thread = threading.Thread(target=self._detection_loop, daemon=True)
             self.detect_thread.start()
         else:
-            self.btn_detect.config(text=f"▶️ 开始实时识别 (包含视觉监控 - {self.fps}FPS)", bg="#E74C3C")
+            self.btn_detect.config(text=f"▶️ 开始实时掩码识别 ({self.fps}FPS)", bg="#E74C3C")
             self.lbl_weapon.config(text="已暂停", fg="#7F8C8D")
-            # 不在主线程销毁窗口，在子线程结束后统一处理，或使用 root.after
             self.root.after(100, cv2.destroyAllWindows)
 
     def _detection_loop(self):
-        # 将 mss 移入循环内部，或者确保它能处理窗口事件
         with mss.mss() as sct:
             while self.is_detecting:
                 start_time = time.time()
                 
-                # 核心识别逻辑
                 weapon_name, score, current_img = self.weapon_id.identify_current_weapon(sct)
-                
-                # 使用 after 异步更新 UI
                 self.root.after(0, self._update_ui, weapon_name, score)
                 
-                # OpenCV 调试窗口显示
                 if current_img is not None:
-                    # 关键修改：增加异常检查，防止窗口失效导致循环崩溃
                     try:
-                        cv2.imshow("Debug: Live Screenshot", current_img)
-                        if weapon_name and weapon_name in self.weapon_id.templates:
-                            # 记得这里要取字典中的 'tpl'
-                            tpl_img = self.weapon_id.templates[weapon_name][0]["tpl"]
-                            cv2.imshow("Debug: Matched Template", tpl_img)
+                        # 1. 显示当前屏幕提取的所有乱七八糟的轮廓
+                        cv2.imshow("Debug: Live Contours (Raw)", current_img)
                         
-                        # 必须保持 waitKey 存活
+                        if weapon_name and weapon_name in self.weapon_id.templates:
+                            tpl_img = self.weapon_id.templates[weapon_name][0]["tpl"]
+                            mask_img = self.weapon_id.templates[weapon_name][0]["mask"]
+                            
+                            # 2. 显示匹配上的干净模板
+                            cv2.imshow("Debug: Matched Template", tpl_img)
+                            # 3. 显示用于过滤背景的掩码 (只有在这个白色胖线条里的东西才会被匹配计算)
+                            cv2.imshow("Debug: Magic Mask", mask_img)
+                        
                         cv2.waitKey(1)
                     except cv2.error:
                         pass
                 
-                # 帧率同步
                 elapsed = time.time() - start_time
                 sleep_time = max(0, (1.0 / self.fps) - elapsed)
                 time.sleep(sleep_time)
