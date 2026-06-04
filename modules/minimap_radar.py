@@ -11,7 +11,7 @@ import ctypes
 
 class MinimapRadarModule:
     """PUBG 小地图视觉雷达子模块"""
-    def __init__(self, root, region_manager, config_file="config.json"):
+    def __init__(self, root, region_manager = None, config_file="config.json"):
         self.root = root  
         self.region_manager = region_manager
         self.config_file = config_file
@@ -149,10 +149,6 @@ class MinimapRadarModule:
             while self._thread_running:
                 # 动态获取小地图区域（兼容 get_region 和 get_real_region）
                 self.monitor = self.region_manager.get_real_region("minimap_region")
-                # if self.monitor is None:
-                #     # 尝试另一种方法名
-                #     if hasattr(self.region_manager, "get_real_region"):
-                #         self.monitor = self.region_manager.get_real_region("minimap_region")
                 
                 try:
                     if not self.monitor:
