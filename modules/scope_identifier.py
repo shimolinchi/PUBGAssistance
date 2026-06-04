@@ -61,7 +61,7 @@ class ScopeIdentifier:
     def _load_templates(self):
         print(f"[倍镜识别] 正在加载掩码轮廓模板...")
         
-        scope_region = self.rm.get_region("scope_region")
+        scope_region = self.rm.get_templates_region("scope_region")
         if not scope_region or not os.path.exists(self.templates_dir):
             return
 
@@ -120,7 +120,7 @@ class ScopeIdentifier:
         if not self.is_enabled:
             return None, 0.0, None
 
-        scope_region = self.rm.get_region("scope_region")
+        scope_region = self.rm.get_real_region("scope_region")
         if not scope_region or not self.templates:
             return None, 0.0, None
 

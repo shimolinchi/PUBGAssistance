@@ -26,7 +26,7 @@ class GestureIdentifier:
 
     def _load_templates(self):
         print(f"[姿势识别] 正在加载模板 (Mask模式)...")
-        stance_region = self.rm.get_region("stance_region")
+        stance_region = self.rm.get_templates_region("stance_region")
         if not stance_region or not os.path.exists(self.templates_dir):
             return
 
@@ -60,7 +60,7 @@ class GestureIdentifier:
         print(f"[姿势识别] 加载完毕: {self.gesture_names}")
 
     def identify_current_gesture(self, sct: mss.mss):
-        stance_region = self.rm.get_region("stance_region")
+        stance_region = self.rm.get_real_region("stance_region")
         if not stance_region or not self.templates:
             return None, 0.0, None
 

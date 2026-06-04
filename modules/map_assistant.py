@@ -2,6 +2,7 @@ import tkinter as tk
 import json
 import os
 import ctypes
+import math
 
 # ================= 静态点位数据 =================
 MAP_DATA = {
@@ -50,57 +51,31 @@ POINT_CONFIG = {
     "safty_doors": {"name": "安全门", "color": "#FF0000"}
 }
 
+
 class MapPointAssistant:
-    def __init__(self, root, config_file="config.json"): 
+    """大地图静态点位助手 - 集成 RegionManager 版"""
+
+    def __init__(self, root, region_manager, config_file="config.json"):
         self.root = root
+        self.region_manager = region_manager
         self.config_file = config_file
-        
-        self.monitor = None
-        self.map_data = {}
-        self.load_config()
-        
+
+        # 从 RegionManager 获取大地图区域
+        self.monitor = self.region_manager.get_real_region("largemap_region")
+        # 地图数据（从静态数据或 config 中的自定义数据合并，此处保留原 MAP_DATA）
+        self.map_data = MAP_DATA
+
         self.is_enabled = False
-        
-        # 核心状态：只管地图和尺寸
         self.current_map_name = "艾伦格 (Erangel)"
         self.active_categories = {"vehicles", "planes", "rooms", "bear_caves", "crowbar_rooms", "lab_camps", "safty_doors"}
         self.current_marker_size = "medium"
-        
+
+        self.calib_state = "IDLE"      # IDLE / CALIB_1 / CALIB_2
+        self.calib_pt1 = None
+
         self.overlay = None
         self.canvas = None
         self._init_overlay()
-
-    def load_config(self):
-        if os.path.exists(self.config_file):
-            try:
-                with open(self.config_file, 'r', encoding='utf-8') as f:
-                    config = json.load(f)
-                    
-                    self.map_data = config.get("map_data", {})
-                    
-                    regions = config.get("detection_regions", {})
-                    if "largemap_region" in regions:
-                        self.monitor = regions["largemap_region"]
-            except Exception as e:
-                print(f"[地图助手] 配置读取失败: {e}")
-
-    def save_config(self):
-        """保存配置：先读取原有全部配置，更新自己那部分，再写回，避免覆盖"""
-        config_data = {}
-        # 先尝试读取现有的 config.json
-        if os.path.exists(self.config_file):
-            try:
-                with open(self.config_file, 'r', encoding='utf-8') as f:
-                    config_data = json.load(f)
-            except:
-                pass
-        
-        # 将大地图的标定数据写入特定的键值
-        config_data["map_rect"] = self.monitor
-        
-        # 将完整数据写回文件
-        with open(self.config_file, 'w', encoding='utf-8') as f:
-            json.dump(config_data, f, indent=4, ensure_ascii=False)
 
     def _init_overlay(self):
         self.overlay = tk.Toplevel(self.root)
@@ -108,22 +83,35 @@ class MapPointAssistant:
         self.overlay.attributes("-topmost", True)
         self.overlay.attributes("-transparentcolor", "black")
         self.overlay.overrideredirect(True)
+
         self.canvas = tk.Canvas(self.overlay, bg="black", highlightthickness=0)
         self.canvas.pack(fill=tk.BOTH, expand=True)
-        
-        # 仅在校准时才需要绑定的 Tkinter 事件
+
         self.canvas.bind("<Button-1>", self._on_calib_left)
         self.canvas.bind("<Button-3>", self._on_calib_right)
-        
+
         self.overlay.update_idletasks()
+
+        # 一次性强制置顶
         try:
             hwnd = int(self.overlay.frame(), 16)
+            GWLP_EXSTYLE = -20
+            WS_EX_TOPMOST = 0x00000008
+            ex_style = ctypes.windll.user32.GetWindowLongW(hwnd, GWLP_EXSTYLE)
+            ctypes.windll.user32.SetWindowLongW(hwnd, GWLP_EXSTYLE, ex_style | WS_EX_TOPMOST)
+
+            HWND_TOPMOST = -1
+            SWP_NOMOVE = 0x0002
+            SWP_NOSIZE = 0x0001
+            ctypes.windll.user32.SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE)
+
+            ctypes.windll.user32.SetForegroundWindow(hwnd)
+            ctypes.windll.user32.BringWindowToTop(hwnd)
             ctypes.windll.user32.SetWindowDisplayAffinity(hwnd, 17)
-        except Exception: pass
+        except Exception as e:
+            print(f"[地图助手] 窗口置顶失败: {e}")
 
-    
-
-    # ================= 供 main.py 调用的 API =================
+    # ================= 公共 API =================
     def set_enabled(self, enabled: bool):
         self.is_enabled = enabled
         self._render_points()
@@ -137,24 +125,53 @@ class MapPointAssistant:
         self._render_points()
 
     def trigger_calibration(self):
+        """开始校准大地图区域（正方形框选）"""
         self.calib_state = "CALIB_1"
+        # 临时取消透明色和设置半透明便于框选
         self.overlay.attributes("-transparentcolor", "")
         self.overlay.attributes("-alpha", 0.4)
         self.canvas.config(bg="#111111", cursor="crosshair")
         self.canvas.delete("all")
+        self.calib_pt1 = None
 
+    def cancel_calibration(self):
+        """取消校准"""
+        if self.calib_state != "IDLE":
+            self._exit_calibration()
+
+    # ================= 校准回调 =================
     def _on_calib_left(self, event):
         if self.calib_state == "CALIB_1":
             self.calib_pt1 = (event.x, event.y)
             self.calib_state = "CALIB_2"
-            self.canvas.create_oval(event.x-3, event.y-3, event.x+3, event.y+3, fill="red", tags="temp_calib")
+            self.canvas.create_oval(event.x - 3, event.y - 3, event.x + 3, event.y + 3, fill="red", tags="temp_calib")
         elif self.calib_state == "CALIB_2":
             x1, y1 = self.calib_pt1
             x2, y2 = event.x, event.y
-            cx, cy = (x1 + x2) / 2, (y1 + y2) / 2
+            cx = (x1 + x2) // 2
+            cy = (y1 + y2) // 2
             side = max(abs(x2 - x1), abs(y2 - y1))
-            self.monitor = {"left": cx - side / 2, "top": cy - side / 2, "side": side}
-            self.save_config()
+            if side < 10:
+                return
+            # 构造正方形区域
+            left = cx - side // 2
+            top = cy - side // 2
+            self.monitor = {"left": left, "top": top, "width": side, "height": side}
+
+            # 更新 RegionManager 中的 largemap_region
+            base_x = int(round(left / self.region_manager.scale_x))
+            base_y = int(round(top / self.region_manager.scale_y))
+            base_side = int(round(side / ((self.region_manager.scale_x + self.region_manager.scale_y) / 2)))
+            # 注意：RegionManager 中的 base_regions 存储的是基于基准分辨率（1920x1080）的坐标
+            # 我们直接更新 real_regions 并同步保存到配置文件
+            self.region_manager.real_regions["largemap_region"] = {
+                "left": left, "top": top, "width": side, "height": side
+            }
+            self.region_manager.base_regions["largemap_region"] = {
+                "left": base_x, "top": base_y, "width": base_side, "height": base_side
+            }
+            self.region_manager._save_config()
+
             self._exit_calibration()
             self._render_points()
 
@@ -169,38 +186,44 @@ class MapPointAssistant:
         self.canvas.config(bg="black", cursor="arrow")
         self.canvas.delete("temp_calib")
 
-    # ================= 静态点位渲染引擎 =================
+    # ================= 点位渲染 =================
     def _render_points(self):
         self.canvas.delete("map_point")
         if not self.is_enabled or not self.monitor:
             return
 
-        if self.current_map_name in MAP_DATA:
-            current_map_data = MAP_DATA[self.current_map_name]
-            cx = self.monitor["left"] + self.monitor["side"] / 2
-            cy = self.monitor["top"] + self.monitor["side"] / 2
-            half_side = self.monitor["side"] / 2
-            
-            # 配置：小(实心)、中(空心)、大(空心)
-            if self.current_marker_size == "small":
-                r, fill_active, line_width = 2, True, 1
-            elif self.current_marker_size == "medium":
-                r, fill_active, line_width = 3, False, 1
-            else: # large
-                r, fill_active, line_width = 4, False, 3
-            
-            for cat_key in self.active_categories:
-                if cat_key in current_map_data:
-                    color = POINT_CONFIG.get(cat_key, {"color": "white"})["color"]
-                    
-                    for norm_x, norm_y in current_map_data[cat_key]:
-                        screen_x = cx + norm_x * half_side
-                        screen_y = cy - norm_y * half_side
-                        
-                        # 实心与空心的区分渲染
-                        if fill_active:
-                            self.canvas.create_oval(screen_x-r, screen_y-r, screen_x+r, screen_y+r, 
-                                                    fill=color, outline="black", width=line_width, tags="map_point")
-                        else:
-                            self.canvas.create_oval(screen_x-r, screen_y-r, screen_x+r, screen_y+r, 
-                                                    fill="", outline=color, width=line_width, tags="map_point")
+        # 获取当前地图数据
+        current_map_data = self.map_data.get(self.current_map_name, {})
+        if not current_map_data:
+            return
+
+        # 计算地图中心与半边长
+        cx = self.monitor["left"] + self.monitor["width"] / 2
+        cy = self.monitor["top"] + self.monitor["height"] / 2
+        half_side = self.monitor["width"] / 2
+
+        # 根据当前标记大小配置半径和样式
+        if self.current_marker_size == "small":
+            r, fill_active, line_width = 2, True, 1
+        elif self.current_marker_size == "medium":
+            r, fill_active, line_width = 3, False, 1
+        else:  # large
+            r, fill_active, line_width = 4, False, 3
+
+        for cat_key in self.active_categories:
+            if cat_key not in current_map_data:
+                continue
+            color = POINT_CONFIG.get(cat_key, {"color": "white"})["color"]
+            for norm_x, norm_y in current_map_data[cat_key]:
+                screen_x = cx + norm_x * half_side
+                screen_y = cy - norm_y * half_side
+                if fill_active:
+                    self.canvas.create_oval(screen_x - r, screen_y - r,
+                                            screen_x + r, screen_y + r,
+                                            fill=color, outline="black", width=line_width,
+                                            tags="map_point")
+                else:
+                    self.canvas.create_oval(screen_x - r, screen_y - r,
+                                            screen_x + r, screen_y + r,
+                                            fill="", outline=color, width=line_width,
+                                            tags="map_point")

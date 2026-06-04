@@ -6,93 +6,109 @@ import mss
 import json
 import os
 import math
+import ctypes
 from pynput import mouse
 
 class AutoMapDistanceAssistant:
-    """PUBG 大地图半自动测距模块 (单次快照版)"""
-    def __init__(self, root, screen_width, screen_height, config_file="config.json"):
+    """PUBG 大地图半自动测距模块 (单次快照版，集成 RegionManager)"""
+    def __init__(self, root, region_manager, config_file="config.json"):
         self.root = root
-        self.sw = screen_width
-        self.sh = screen_height
+        self.region_manager = region_manager
         self.config_file = config_file
-        
-        self.map_rect = None
-        self.map_1km_pixels = 540.0
-        self.colors = {}
-        
-        # 固定 UI 渲染顺序与基础颜色
+
+        # 获取屏幕尺寸
+        self.sw = self.root.winfo_screenwidth()
+        self.sh = self.root.winfo_screenheight()
+
+        # 从 RegionManager 获取大地图区域和比例尺
+        self.map_rect = self.region_manager.get_real_region("largemap_region")
+        self.map_1km_pixels = self.region_manager.get_real_scale("largemap_1km_px") or 540.0
+
+        # 颜色配置（与小地图共用 minimap_colors）
+        self.colors = self.region_manager.get_templates_region("minimap_colors")  # 注意：RegionManager 中没有此方法，需直接读取 config
+        # 替代方案：从 region_manager 内部配置获取，但 region_manager 只提供了 detection_regions 和 map_scales
+        # 我们仍从 config.json 读取颜色，或者从 region_manager 中暴露颜色配置。为了简洁，直接从原 config_file 读取颜色部分
+        self._load_colors_from_config()
+
         self.color_order = ["Yellow", "Orange", "Blue", "Green"]
         self.base_colors = {
-            "Yellow": "#FBED21", "Orange": "#B3500D", 
+            "Yellow": "#FBED21", "Orange": "#B3500D",
             "Blue": "#1A3EA3", "Green": "#109166"
         }
-        
-        self.load_config()
 
         self.state = "IDLE"
         self.player_pt = None
-
-        self.show_display = False  
-        self.last_measured_dists = {c: None for c in self.color_order} 
+        self.show_display = False
+        self.last_measured_dists = {c: None for c in self.color_order}
 
         self.overlay = None
         self.canvas = None
         self._init_overlay()
 
-    def load_config(self):
+    def _load_colors_from_config(self):
+        """从 config.json 加载 minimap_colors（与 RegionManager 保持一致）"""
         if os.path.exists(self.config_file):
             try:
                 with open(self.config_file, 'r', encoding='utf-8') as f:
                     config = json.load(f)
-                    
-                    regions = config.get("detection_regions", {})
-                    if "largemap_region" in regions:
-                        self.map_rect = regions["largemap_region"]
-                        
-                    scales = config.get("map_scales", {})
-                    if "largemap_1km_px" in scales:
-                        self.map_1km_pixels = scales["largemap_1km_px"]
-                        
                     self.colors = config.get("minimap_colors", {})
-            except Exception as e:
-                print(f"[大地图自动测距] 配置文件读取失败: {e}")
+            except:
+                self.colors = {}
 
     def _init_overlay(self):
         self.overlay = tk.Toplevel(self.root)
-        self.overlay.attributes("-fullscreen", True, "-topmost", True, "-transparentcolor", "black")
+        self.overlay.attributes("-fullscreen", True)
+        self.overlay.attributes("-topmost", True)
+        self.overlay.attributes("-transparentcolor", "black")
         self.overlay.overrideredirect(True)
+
         self.canvas = tk.Canvas(self.overlay, bg="black", highlightthickness=0)
-        self.canvas.pack(fill="both", expand=True)
-        
+        self.canvas.pack(fill=tk.BOTH, expand=True)
+
         self.overlay.update_idletasks()
+
+        # 一次性强制置顶（与其他模块一致）
         try:
-            import ctypes
             hwnd = int(self.overlay.frame(), 16)
+            GWLP_EXSTYLE = -20
+            WS_EX_TOPMOST = 0x00000008
+            ex_style = ctypes.windll.user32.GetWindowLongW(hwnd, GWLP_EXSTYLE)
+            ctypes.windll.user32.SetWindowLongW(hwnd, GWLP_EXSTYLE, ex_style | WS_EX_TOPMOST)
+
+            HWND_TOPMOST = -1
+            SWP_NOMOVE = 0x0002
+            SWP_NOSIZE = 0x0001
+            ctypes.windll.user32.SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE)
+
+            ctypes.windll.user32.SetForegroundWindow(hwnd)
+            ctypes.windll.user32.BringWindowToTop(hwnd)
             ctypes.windll.user32.SetWindowDisplayAffinity(hwnd, 17)
-        except: pass
+        except Exception as e:
+            print(f"[大地图测距] 窗口置顶失败: {e}")
 
     def set_display(self, show: bool):
-        """完全与主程序的 N 键 (combat_hud_active) 同步"""
         self.show_display = show
         if not show:
             self.canvas.delete("all")
         else:
-            # 开启显示时，根据状态恢复 UI
             if self.state == "WAIT_PLAYER":
                 self._update_wait_ui()
             elif self.state == "CALCULATING":
                 self._update_calc_ui()
             else:
-                self._render_auto_hud() # 恢复上次测量的数据
+                self._render_auto_hud()
 
     def toggle_mode(self):
-        """主程序快捷键触发测距"""
         if not self.show_display:
-            print("[大地图自动测距] 提示: 主显示模式未开启，无法触发。")
+            print("[大地图自动测距] 主显示模式未开启，无法触发。")
             return
-            
-        self.load_config()
+
+        # 重新从 RegionManager 加载最新区域和比例尺（支持热更新）
+        self.map_rect = self.region_manager.get_real_region("largemap_region")
+        self.map_1km_pixels = self.region_manager.get_real_scale("largemap_1km_px") or 540.0
+
         if not self.map_rect:
+            print("[大地图自动测距] 未配置 largemap_region，请先校准")
             return
 
         if self.state == "IDLE":
@@ -100,42 +116,32 @@ class AutoMapDistanceAssistant:
             self.player_pt = None
             self._update_wait_ui()
         else:
-            # 如果已经在选点了，再按一次快捷键视为取消当前选点
             self.cancel()
 
     def cancel(self):
-        """右键或重复按快捷键触发：取消选点，但保留旧数据"""
         if self.state != "IDLE":
             self.state = "IDLE"
             self.player_pt = None
             print("[大地图自动测距] 取消本次标定")
-            
-            # 如果主显示开启着，恢复显示上一次的老数据
             if self.show_display:
                 self._render_auto_hud()
 
     def on_mouse_click(self, x, y, button, pressed):
-        if not pressed: return
-
-        # 右键：仅用于取消等待点击的状态，不会清空已保存的雷达数据
+        if not pressed:
+            return
         if button == mouse.Button.right:
             if self.state == "WAIT_PLAYER":
                 self.cancel()
             return
-
-        # 左键：确定玩家坐标，开始单次计算
         if button == mouse.Button.left and self.state == "WAIT_PLAYER":
             self.player_pt = (x, y)
             self.state = "CALCULATING"
             self._update_calc_ui()
             print(f"[大地图自动测距] 玩家位置确认 {self.player_pt}，开始瞬间快照计算...")
-            
-            # 开启一次性线程进行视觉识别
             threading.Thread(target=self._process_single_frame, daemon=True).start()
 
     # ================= 核心视觉：单次扫描 =================
     def _process_single_frame(self):
-        """不再是死循环，只进行一次精准的截图和匹配"""
         tpl_list = []
         tpl_dir = "templates/pnt"
         if os.path.exists(tpl_dir):
@@ -146,30 +152,29 @@ class AutoMapDistanceAssistant:
                         alpha = img_bgra[:, :, 3]
                         _, binary_tpl = cv2.threshold(alpha, 128, 255, cv2.THRESH_BINARY)
                         tpl_list.append({"img": binary_tpl, "w": binary_tpl.shape[1], "h": binary_tpl.shape[0]})
-        
-        with mss.MSS() as sct:
+
+        with mss.mss() as sct:
             try:
                 grab_monitor = {
                     "top": int(self.map_rect["top"]),
                     "left": int(self.map_rect["left"]),
-                    "width": int(self.map_rect.get("width", self.map_rect.get("side", 800))),
-                    "height": int(self.map_rect.get("height", self.map_rect.get("side", 800)))
+                    "width": int(self.map_rect["width"]),
+                    "height": int(self.map_rect["height"])
                 }
                 screenshot = sct.grab(grab_monitor)
                 frame_bgr = cv2.cvtColor(np.array(screenshot), cv2.COLOR_BGRA2BGR)
                 frame_hsv = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2HSV)
-                
-                # 新的测距结果
+
                 measured_dists = {c: None for c in self.color_order}
-                
+
                 for color_name in self.color_order:
-                    if color_name not in self.colors: continue
-                    
+                    if color_name not in self.colors:
+                        continue
                     config = self.colors[color_name]
                     lower = np.array(config["lower"], dtype=np.uint8)
                     upper = np.array(config["upper"], dtype=np.uint8)
                     color_mask = cv2.inRange(frame_hsv, lower, upper)
-                    
+
                     candidates = []
                     for tpl in tpl_list:
                         res = cv2.matchTemplate(color_mask, tpl["img"], cv2.TM_CCOEFF_NORMED)
@@ -179,32 +184,30 @@ class AutoMapDistanceAssistant:
                                 'x': pt[0] + (tpl["w"] // 2),
                                 'y': pt[1] + tpl["h"]
                             })
-                    
+
                     if candidates:
-                        best_pt = candidates[0] 
+                        best_pt = candidates[0]
                         abs_x = self.map_rect["left"] + best_pt['x']
                         abs_y = self.map_rect["top"] + best_pt['y']
-                        
                         dx = abs_x - self.player_pt[0]
                         dy = abs_y - self.player_pt[1]
                         dist_px = math.hypot(dx, dy)
                         dist_m = (dist_px / self.map_1km_pixels) * 1000.0
                         measured_dists[color_name] = dist_m
 
-                # 无论是否测到，都更新内部缓存，并切回 IDLE
                 self.last_measured_dists = measured_dists
                 self.state = "IDLE"
-                
+
                 if self.show_display:
                     self.root.after(0, self._render_auto_hud)
-                
+
             except Exception as e:
                 print(f"[大地图快照错误] {e}")
                 self.state = "IDLE"
                 if self.show_display:
                     self.root.after(0, self._render_auto_hud)
 
-    # ================= UI 渲染层 =================
+    # ================= UI 渲染 =================
     def _dim_color(self, hex_color, alpha_ratio=0.2):
         hex_color = hex_color.lstrip('#')
         r, g, b = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
@@ -217,49 +220,39 @@ class AutoMapDistanceAssistant:
         self.canvas.create_polygon(points, smooth=True, **kwargs)
 
     def _update_wait_ui(self):
-        """渲染等待点击的提示框"""
         self.canvas.delete("all")
         box_w, box_h = 240, 45
-        mortar_total_width = 465 
+        mortar_total_width = 465
         start_x = self.sw - mortar_total_width - 25
         x1 = start_x + (mortar_total_width - box_w) / 2
-        y1 = self.sh * 0.465 - box_h - 15 
-        
+        y1 = self.sh * 0.465 - box_h - 15
         self._draw_rounded_rect(x1, y1, x1+box_w, y1+box_h, radius=12, fill="#2980B9", outline="#34495E", width=2, tags="hud")
         self.canvas.create_text(x1 + box_w/2, y1 + box_h/2, text="📍 请左键点击你的当前位置", fill="#FFFFFF", font=("Microsoft YaHei", 12, "bold"), tags="hud")
 
     def _update_calc_ui(self):
-        """渲染瞬间的计算提示"""
         self.canvas.delete("all")
         box_w, box_h = 240, 45
-        mortar_total_width = 465 
+        mortar_total_width = 465
         start_x = self.sw - mortar_total_width - 25
         x1 = start_x + (mortar_total_width - box_w) / 2
-        y1 = self.sh * 0.465 - box_h - 15 
-        
+        y1 = self.sh * 0.465 - box_h - 15
         self._draw_rounded_rect(x1, y1, x1+box_w, y1+box_h, radius=12, fill="#E67E22", outline="#34495E", width=2, tags="hud")
         self.canvas.create_text(x1 + box_w/2, y1 + box_h/2, text="⚙️ 正在分析战术地图...", fill="#FFFFFF", font=("Microsoft YaHei", 12, "bold"), tags="hud")
 
     def _render_auto_hud(self):
-        """渲染最终距离，直接读取 self.last_measured_dists"""
         self.canvas.delete("all")
-        if not self.show_display: return
+        if not self.show_display:
+            return
 
         box_w, box_h, spacing = 105, 50, 15
         total_width = 4 * box_w + 3 * spacing
-        
         start_x = self.sw - total_width - 25
-        start_y = self.sh * 0.465 - box_h - 15 
-        
-        # 即使恢复数据时，如果 player_pt 还在，也可以重新把它画出来
-        # if self.player_pt:
-        #     px, py = self.player_pt
-            # self.canvas.create_oval(px-4, py-4, px+4, py+4, fill="white", outline="black", width=2, tags="hud")
+        start_y = self.sh * 0.465 - box_h - 15
 
         for i, color_name in enumerate(self.color_order):
             dist = self.last_measured_dists.get(color_name)
             base_hex = self.base_colors[color_name]
-            
+
             if dist is not None:
                 bg_color = base_hex
                 text = f"{dist:.0f}m"
@@ -271,7 +264,7 @@ class AutoMapDistanceAssistant:
             y1 = start_y
             x2 = x1 + box_w
             y2 = y1 + box_h
-            
+
             self._draw_rounded_rect(x1, y1, x2, y2, radius=15, fill=bg_color, tags="hud")
             font_size = 14 if dist is not None else 12
             text_color = "#FFFFFF" if dist is not None else "#7F8C8D"

@@ -50,12 +50,33 @@ class ElevationRadarModule:
         self.overlay.overrideredirect(True)
         self.canvas = tk.Canvas(self.overlay, bg="black", highlightthickness=0)
         self.canvas.pack(fill="both", expand=True)
+
         self.overlay.update_idletasks()
+
+        # ========== 一次性强制最高层（无定时器） ==========
         try:
             hwnd = int(self.overlay.frame(), 16)
+
+            # 1. 设置扩展样式 WS_EX_TOPMOST
+            GWLP_EXSTYLE = -20
+            WS_EX_TOPMOST = 0x00000008
+            ex_style = ctypes.windll.user32.GetWindowLongW(hwnd, GWLP_EXSTYLE)
+            ctypes.windll.user32.SetWindowLongW(hwnd, GWLP_EXSTYLE, ex_style | WS_EX_TOPMOST)
+
+            # 2. 调用 SetWindowPos 将窗口插入顶层链
+            HWND_TOPMOST = -1
+            SWP_NOMOVE = 0x0002
+            SWP_NOSIZE = 0x0001
+            ctypes.windll.user32.SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE)
+
+            # 3. 主动激活窗口，确保它在前
+            ctypes.windll.user32.SetForegroundWindow(hwnd)
+            ctypes.windll.user32.BringWindowToTop(hwnd)
+
+            # 4. 原有的窗口隐身保护
             ctypes.windll.user32.SetWindowDisplayAffinity(hwnd, 17)
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[高低角模块] 窗口置顶失败: {e}")
 
     def set_enabled(self, enabled: bool):
         self.is_enabled = enabled

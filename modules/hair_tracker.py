@@ -6,15 +6,15 @@ import numpy as np
 import mss
 
 class HairTracker:
-    """内部组件：十字弩/VSS 圆形瞄准镜追踪器 (线程安全版)"""
+    """内部组件：十字弩/VSS 圆形瞄准镜追踪器 (线程安全版，集成 RegionManager)"""
     
-    def __init__(self, screen_width, screen_height, show_debug=False, config_file="config.json"):
+    def __init__(self, screen_width, screen_height, region_manager, show_debug=False):
         self.sw = screen_width
         self.sh = screen_height
+        self.region_manager = region_manager
         self.show_debug = show_debug
-        self.config_file = config_file
         
-        # 1. 默认兜底 ROI (兼容任意分辨率，防止 config 丢失)
+        # 1. 默认兜底 ROI (兼容任意分辨率，防止未标定)
         self.monitor = {
             "top": int(self.sh * (208 / 1080.0)),
             "left": int(self.sw * (605 / 1920.0)),
@@ -22,8 +22,8 @@ class HairTracker:
             "height": int(self.sh * ((878 - 208) / 1080.0))
         }
         
-        # 2. 尝试从全局配置读取精准标定数据
-        self._load_config()
+        # 2. 从 RegionManager 读取精准标定数据（crosshair_region）
+        self._load_region_from_manager()
         
         # 强力填补黑洞的闭运算核
         self.close_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (21, 21))
@@ -36,20 +36,19 @@ class HairTracker:
         self.is_enabled = False
         self._thread_running = False
 
-    def _load_config(self):
-        """从 config.json 读取视觉管理器的标定区域"""
-        import os, json
-        if os.path.exists(self.config_file):
-            try:
-                with open(self.config_file, 'r', encoding='utf-8') as f:
-                    config = json.load(f)
-                    regions = config.get("detection_regions", {})
-                    
-                    # 尝试读取我们在 RegionManager 中对应的名称
-                    if "crosshair_region" in regions:
-                        self.monitor = regions["crosshair_region"]
-            except:
-                pass
+    def _load_region_from_manager(self):
+        """从 RegionManager 获取 crosshair_region 的真实区域"""
+        if not self.region_manager:
+            return
+        try:
+            region = self.region_manager.get_real_region("crosshair_region")
+            if region and region.get("width", 0) > 0 and region.get("height", 0) > 0:
+                self.monitor = region
+                print(f"[准星追踪] 已加载标定区域: {self.monitor}")
+            else:
+                print("[准星追踪] 未找到 crosshair_region，使用默认区域")
+        except Exception as e:
+            print(f"[准星追踪] 加载区域失败: {e}")
 
     def enable_module(self, enabled: bool):
         self.is_enabled = enabled
@@ -65,12 +64,11 @@ class HairTracker:
     def _tracking_loop(self):
         debug_win_name = "Crossbow/VSS Vision Debug"
         
-        # 核心修复：在子线程内部独立创建和管理 OpenCV 窗口，绝不和主程序冲突
         if self.show_debug:
             cv2.namedWindow(debug_win_name, cv2.WINDOW_NORMAL)
             cv2.resizeWindow(debug_win_name, 400, 400)
 
-        with mss.MSS() as sct:
+        with mss.mss() as sct:
             while self._thread_running:
                 try:
                     screenshot = sct.grab(self.monitor)
@@ -102,8 +100,8 @@ class HairTracker:
                             if circle_area > 0:
                                 fit_ratio = area / circle_area
                                 
-                                # 只有拟合度大于 0.82，才承认这是一个瞄准镜！
-                                if fit_ratio > 0.82:
+                                # 只有拟合度大于 0.7s，才承认这是一个瞄准镜！
+                                if fit_ratio > 0.7:
                                     self.cx = self.monitor["left"] + int(x)
                                     self.cy = self.monitor["top"] + int(y)
                                     self.is_found = True
@@ -127,19 +125,18 @@ class HairTracker:
                         cv2.putText(debug_frame, status, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
                         
                         cv2.imshow(debug_win_name, debug_frame)
-                        cv2.waitKey(1)  # 保持窗口响应的关键
+                        cv2.waitKey(1)
 
                 except Exception as e:
                     self.is_found = False
-                    print(f"🔴 [VSS 视觉致命报错] {e}")  # 如果出错，控制台必定打印
-                    # 即使出错也要刷新窗口防止卡死
+                    print(f"🔴 [VSS 视觉致命报错] {e}")
                     if self.show_debug:
                         cv2.waitKey(1)
                         
                 time.sleep(0.015)
                 
-        # 退出循环后安全销毁窗口
         if self.show_debug:
             try:
                 cv2.destroyWindow(debug_win_name)
-            except: pass
+            except:
+                pass
