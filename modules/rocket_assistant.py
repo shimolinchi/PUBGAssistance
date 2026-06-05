@@ -74,30 +74,30 @@ class RocketAssistant:
 
         self.overlay.update_idletasks()
 
-        # 强制顶层样式（一次）
-        try:
-            hwnd = int(self.overlay.frame(), 16)
-            GWLP_EXSTYLE = -20
-            WS_EX_TOPMOST = 0x00000008
-            ex_style = ctypes.windll.user32.GetWindowLongW(hwnd, GWLP_EXSTYLE)
-            ctypes.windll.user32.SetWindowLongW(hwnd, GWLP_EXSTYLE, ex_style | WS_EX_TOPMOST)
-            ctypes.windll.user32.SetWindowPos(hwnd, -1, 0, 0, 0, 0, 0x0002 | 0x0001)
-            ctypes.windll.user32.SetWindowDisplayAffinity(hwnd, 17)
-        except Exception as e:
-            print(f"窗口顶层设置失败: {e}")
+        # # 强制顶层样式（一次）
+        # try:
+        #     hwnd = int(self.overlay.frame(), 16)
+        #     GWLP_EXSTYLE = -20
+        #     WS_EX_TOPMOST = 0x00000008
+        #     ex_style = ctypes.windll.user32.GetWindowLongW(hwnd, GWLP_EXSTYLE)
+        #     ctypes.windll.user32.SetWindowLongW(hwnd, GWLP_EXSTYLE, ex_style | WS_EX_TOPMOST)
+        #     ctypes.windll.user32.SetWindowPos(hwnd, -1, 0, 0, 0, 0, 0x0002 | 0x0001)
+        #     ctypes.windll.user32.SetWindowDisplayAffinity(hwnd, 17)
+        # except Exception as e:
+        #     print(f"窗口顶层设置失败: {e}")
 
-        # 关键：当窗口失去焦点（即用户点击其他窗口）时，重新提升
-        def on_focus_out(event):
-            self.overlay.lift()
-            self.overlay.attributes("-topmost", True)
-            # 可选：再次调用 API 确保
-            try:
-                hwnd = int(self.overlay.frame(), 16)
-                ctypes.windll.user32.SetWindowPos(hwnd, -1, 0, 0, 0, 0, 0x0002 | 0x0001)
-            except:
-                pass
+        # # 关键：当窗口失去焦点（即用户点击其他窗口）时，重新提升
+        # def on_focus_out(event):
+        #     self.overlay.lift()
+        #     self.overlay.attributes("-topmost", True)
+        #     # 可选：再次调用 API 确保
+        #     try:
+        #         hwnd = int(self.overlay.frame(), 16)
+        #         ctypes.windll.user32.SetWindowPos(hwnd, -1, 0, 0, 0, 0, 0x0002 | 0x0001)
+        #     except:
+        #         pass
 
-        self.overlay.bind("<FocusOut>", on_focus_out)
+        # self.overlay.bind("<FocusOut>", on_focus_out)
 
     def enable_module(self, enable: bool):
         """启动/停止整个火箭筒辅助系统（同时控制小地图雷达）"""
@@ -160,7 +160,7 @@ class RocketAssistant:
 
         # 绘制中心基准线（从准星到底端）
         self.canvas.create_line(self.center_x, self.center_y, self.center_x, self.end_y,
-                                fill="white", width=2, tags="rocket_hud")
+                                fill="white", width=1, tags="rocket_hud")
 
         # 绘制每个目标的刻度横线和三角指示器
         h_line_width = 30   # 横线向左延伸的长度（像素）

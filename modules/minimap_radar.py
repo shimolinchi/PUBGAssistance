@@ -67,32 +67,32 @@ class MinimapRadarModule:
 
         self.overlay.update_idletasks()
 
-        try:
-            hwnd = int(self.overlay.frame(), 16)
+        # try:
+        #     hwnd = int(self.overlay.frame(), 16)
 
-            # 1. 设置扩展样式 WS_EX_TOPMOST
-            GWLP_EXSTYLE = -20
-            WS_EX_TOPMOST = 0x00000008
-            ex_style = ctypes.windll.user32.GetWindowLongW(hwnd, GWLP_EXSTYLE)
-            ctypes.windll.user32.SetWindowLongW(hwnd, GWLP_EXSTYLE, ex_style | WS_EX_TOPMOST)
+        #     # 1. 设置扩展样式 WS_EX_TOPMOST
+        #     GWLP_EXSTYLE = -20
+        #     WS_EX_TOPMOST = 0x00000008
+        #     ex_style = ctypes.windll.user32.GetWindowLongW(hwnd, GWLP_EXSTYLE)
+        #     ctypes.windll.user32.SetWindowLongW(hwnd, GWLP_EXSTYLE, ex_style | WS_EX_TOPMOST)
 
-            # 2. 调用 SetWindowPos 将窗口插入顶层链
-            HWND_TOPMOST = -1
-            SWP_NOMOVE = 0x0002
-            SWP_NOSIZE = 0x0001
-            ctypes.windll.user32.SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE)
+        #     # 2. 调用 SetWindowPos 将窗口插入顶层链
+        #     HWND_TOPMOST = -1
+        #     SWP_NOMOVE = 0x0002
+        #     SWP_NOSIZE = 0x0001
+        #     ctypes.windll.user32.SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE)
 
-            # 3. 主动激活窗口，确保它在前
-            ctypes.windll.user32.SetForegroundWindow(hwnd)
-            ctypes.windll.user32.BringWindowToTop(hwnd)
+        #     # 3. 主动激活窗口，确保它在前
+        #     ctypes.windll.user32.SetForegroundWindow(hwnd)
+        #     ctypes.windll.user32.BringWindowToTop(hwnd)
 
-            # 4. 原有的窗口隐身保护
-            result = ctypes.windll.user32.SetWindowDisplayAffinity(hwnd, 17)
-            if result == 0:
-                hwnd_alt = self.overlay.winfo_id()
-                ctypes.windll.user32.SetWindowDisplayAffinity(hwnd_alt, 17)
-        except Exception as e:
-            print(f"[雷达模块] 窗口置顶/隐身 API 调用失败: {e}")
+        #     # 4. 原有的窗口隐身保护
+        #     result = ctypes.windll.user32.SetWindowDisplayAffinity(hwnd, 17)
+        #     if result == 0:
+        #         hwnd_alt = self.overlay.winfo_id()
+        #         ctypes.windll.user32.SetWindowDisplayAffinity(hwnd_alt, 17)
+        # except Exception as e:
+        #     print(f"[雷达模块] 窗口置顶/隐身 API 调用失败: {e}")
 
     def set_enabled(self, enabled: bool):
         self.is_enabled = enabled

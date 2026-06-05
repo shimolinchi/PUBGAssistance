@@ -57,29 +57,29 @@ class VssAssistant:
         self.overlay.update_idletasks()
 
         # ========== 一次性强制最高层（与火箭筒助手一致） ==========
-        try:
-            hwnd = int(self.overlay.frame(), 16)
+        # try:
+        #     hwnd = int(self.overlay.frame(), 16)
 
-            # 1. 设置扩展样式 WS_EX_TOPMOST
-            GWLP_EXSTYLE = -20
-            WS_EX_TOPMOST = 0x00000008
-            ex_style = ctypes.windll.user32.GetWindowLongW(hwnd, GWLP_EXSTYLE)
-            ctypes.windll.user32.SetWindowLongW(hwnd, GWLP_EXSTYLE, ex_style | WS_EX_TOPMOST)
+        #     # 1. 设置扩展样式 WS_EX_TOPMOST
+        #     GWLP_EXSTYLE = -20
+        #     WS_EX_TOPMOST = 0x00000008
+        #     ex_style = ctypes.windll.user32.GetWindowLongW(hwnd, GWLP_EXSTYLE)
+        #     ctypes.windll.user32.SetWindowLongW(hwnd, GWLP_EXSTYLE, ex_style | WS_EX_TOPMOST)
 
-            # 2. 调用 SetWindowPos 将窗口插入顶层链
-            HWND_TOPMOST = -1
-            SWP_NOMOVE = 0x0002
-            SWP_NOSIZE = 0x0001
-            ctypes.windll.user32.SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE)
+        #     # 2. 调用 SetWindowPos 将窗口插入顶层链
+        #     HWND_TOPMOST = -1
+        #     SWP_NOMOVE = 0x0002
+        #     SWP_NOSIZE = 0x0001
+        #     ctypes.windll.user32.SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE)
 
-            # 3. 主动激活窗口，确保它在前
-            ctypes.windll.user32.SetForegroundWindow(hwnd)
-            ctypes.windll.user32.BringWindowToTop(hwnd)
+        #     # 3. 主动激活窗口，确保它在前
+        #     ctypes.windll.user32.SetForegroundWindow(hwnd)
+        #     ctypes.windll.user32.BringWindowToTop(hwnd)
 
-            # 4. 窗口隐身保护（防截图/录屏）
-            ctypes.windll.user32.SetWindowDisplayAffinity(hwnd, 17)
-        except Exception as e:
-            print(f"[VSS助手] 窗口置顶/隐身 API 调用失败: {e}")
+        #     # 4. 窗口隐身保护（防截图/录屏）
+        #     ctypes.windll.user32.SetWindowDisplayAffinity(hwnd, 17)
+        # except Exception as e:
+        #     print(f"[VSS助手] 窗口置顶/隐身 API 调用失败: {e}")
 
     def enable_module(self, enabled: bool):
         self.is_enabled = enabled

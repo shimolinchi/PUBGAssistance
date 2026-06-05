@@ -57,21 +57,21 @@ class CrossbowAssistant:
         self.overlay.update_idletasks()
 
         # 一次性强制最高层（与火箭筒助手一致）
-        try:
-            hwnd = int(self.overlay.frame(), 16)
-            GWLP_EXSTYLE = -20
-            WS_EX_TOPMOST = 0x00000008
-            ex_style = ctypes.windll.user32.GetWindowLongW(hwnd, GWLP_EXSTYLE)
-            ctypes.windll.user32.SetWindowLongW(hwnd, GWLP_EXSTYLE, ex_style | WS_EX_TOPMOST)
-            HWND_TOPMOST = -1
-            SWP_NOMOVE = 0x0002
-            SWP_NOSIZE = 0x0001
-            ctypes.windll.user32.SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE)
-            ctypes.windll.user32.SetForegroundWindow(hwnd)
-            ctypes.windll.user32.BringWindowToTop(hwnd)
-            ctypes.windll.user32.SetWindowDisplayAffinity(hwnd, 17)
-        except Exception as e:
-            print(f"[弩助手] 窗口置顶/隐身 API 调用失败: {e}")
+        # try:
+        #     hwnd = int(self.overlay.frame(), 16)
+        #     GWLP_EXSTYLE = -20
+        #     WS_EX_TOPMOST = 0x00000008
+        #     ex_style = ctypes.windll.user32.GetWindowLongW(hwnd, GWLP_EXSTYLE)
+        #     ctypes.windll.user32.SetWindowLongW(hwnd, GWLP_EXSTYLE, ex_style | WS_EX_TOPMOST)
+        #     HWND_TOPMOST = -1
+        #     SWP_NOMOVE = 0x0002
+        #     SWP_NOSIZE = 0x0001
+        #     ctypes.windll.user32.SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE)
+        #     ctypes.windll.user32.SetForegroundWindow(hwnd)
+        #     ctypes.windll.user32.BringWindowToTop(hwnd)
+        #     ctypes.windll.user32.SetWindowDisplayAffinity(hwnd, 17)
+        # except Exception as e:
+        #     print(f"[弩助手] 窗口置顶/隐身 API 调用失败: {e}")
 
     def enable_module(self, enabled: bool):
         self.is_enabled = enabled

@@ -393,9 +393,9 @@ class TacticalHub:
 
         key_configs = [
             ("手雷瞬爆", "throw"),
-            ("显示层开关", "toggle_display"),
+            ("辅助显示开关", "toggle_display"),
             ("大地图测距", "measure_map"),
-            ("压枪开关", "toggle_recoil"),
+            ("辅助压枪开关", "toggle_recoil"),
             ("武器检测开关", "toggle_weapon_detection"),
             ("打开装备栏", "toggle_equipment"),
         ]
