@@ -1,0 +1,229 @@
+import tkinter as tk
+import json
+import os
+import ctypes
+import math
+
+# ================= 静态点位数据 =================
+MAP_DATA = {
+    "艾伦格 (Erangel)": {
+        "vehicles": [(-0.757, 0.594), (-0.609, 0.62), (-0.344, 0.674), (-0.07, 0.681), (0.126, 0.757), (0.365, 0.891), (0.654, 0.765), (-0.583, 0.45), (-0.369, 0.383), (0.376, 0.674), (0.639, 0.574), (0.319, 0.417), (0.489, 0.357), (0.689, 0.193), (0.719, -0.133), (-0.656, 0.287), (-0.081, 0.257), (0.098, 0.235), (-0.002, 0.152), (-0.224, 0.183), (-0.591, 0.154), (-0.75, -0.281), (-0.578, -0.124), (-0.483, 0.041), (-0.337, -0.052), (-0.094, -0.017), (0.063, -0.146), (0.261, -0.124), (0.431, -0.161), (-0.633, -0.481), (-0.078, -0.465), (0.111, -0.656), (0.078, -0.735), (0.359, -0.469), (0.476, -0.513)],
+        "rooms": [(-0.663, 0.554), (-0.639, 0.126), (-0.363, 0.457), (-0.689, -0.356), (-0.261, 0.08), (-0.33, -0.265), (0.141, -0.083), (0.341, 0.161), (0.589, 0.491), (0.657, -0.2), (-0.193, -0.641), (0.08, -0.452), (0.391, -0.65)],
+        "planes": [(-0.778, 0.611), (-0.6, 0.622), (-0.581, 0.519), (-0.406, 0.656), (-0.294, 0.696), (-0.137, 0.606), (-0.135, 0.719), (-0.189, 0.393), (0.337, 0.881), (0.541, 0.872), (0.617, 0.667), (0.569, 0.572), (0.694, 0.541), (0.669, 0.448), (0.689, 0.32), (0.669, -0.009), (0.711, -0.165), (0.667, -0.233), (0.83, 0.006), (0.859, -0.124), (-0.333, 0.256), (-0.611, 0.174), (-0.739, 0.2), (-0.739, 0.096), (-0.774, -0.217), (-0.691, -0.398), (-0.528, -0.396), (-0.502, -0.298), (-0.352, -0.411), (-0.302, -0.346), (-0.228, -0.667), (-0.126, -0.578), (0.033, -0.615), (0.019, -0.72), (0.209, -0.617), (0.3, -0.648), (0.346, -0.537), (0.402, -0.517)]
+    },
+    "米拉玛 (Miramar)": {
+        "vehicles": [(-0.765, -0.756), (-0.102, -0.843), (0.12, -0.752), (-0.12, -0.644), (-0.406, -0.531), (-0.635, -0.463), (-0.772, -0.228), (-0.581, -0.167), (-0.331, -0.283), (-0.174, -0.344), (0.269, -0.574), (0.535, -0.496), (0.209, -0.394), (0.139, -0.324), (-0.487, -0.002), (-0.87, 0.202), (-0.615, 0.252), (-0.239, 0.115), (-0.113, -0.035), (0.235, -0.011), (0.522, -0.15), (-0.776, 0.461), (-0.717, 0.524), (-0.319, 0.496), (-0.033, 0.261), (0.081, 0.315), (0.389, 0.294), (0.585, 0.376), (0.75, 0.174), (-0.38, 0.654), (-0.244, 0.854), (-0.08, 0.861), (-0.026, 0.706), (0.137, 0.8), (0.354, 0.656), (0.437, 0.794), (0.624, 0.709), (0.702, 0.607)],
+        "rooms":[(-0.559, 0.589), (-0.2, 0.733), (-0.659, 0.194), (-0.313, 0.387), (0.13, 0.648), (-0.678, -0.304), (-0.339, -0.224), (-0.065, 0.043), (0.261, 0.217), (0.546, 0.524), (-0.657, -0.778), (-0.2, -0.63), (0.078, -0.276), (0.519, -0.041), (0.281, -0.537)],
+        "planes": [(0.556, 0.867), (0.22, 0.839), (0.022, 0.87), (-0.12, 0.661), (-0.191, 0.857), (-0.587, 0.617), (-0.704, 0.487), (-0.869, 0.302), (-0.631, 0.189), (-0.711, -0.039), (-0.576, -0.133), (-0.737, -0.363), (-0.77, -0.517), (-0.461, -0.45), (-0.307, -0.581), (-0.62, -0.644), (-0.748, -0.826), (-0.537, -0.894), (0.022, -0.737), (0.172, -0.756), (0.27, -0.665), (0.378, -0.52), (0.572, -0.404), (0.806, -0.17)]
+    },
+    "泰戈 (Taego)": {
+        "vehicles":[(-0.319, 0.793), (-0.6, 0.617), (-0.689, 0.383), (-0.511, 0.261), (-0.419, 0.419), (-0.367, 0.4), (-0.302, 0.498), (-0.057, 0.756), (-0.411, 0.046), (-0.133, 0.296), (0.081, 0.428), (0.144, 0.394), (0.27, 0.644), (0.537, 0.633), (0.604, 0.539), (0.717, 0.596), (0.77, 0.261), (0.783, 0.226), (0.754, 0.161), (0.144, 0.109), (0.293, 0.041), (0.435, -0.043), (0.587, -0.111), (0.602, -0.465), (0.478, -0.385), (0.435, -0.45), (0.27, -0.291), (0.033, -0.189), (-0.148, -0.219), (-0.181, -0.267), (-0.394, -0.169), (-0.626, 0.043), (-0.837, -0.117), (-0.637, -0.157), (-0.28, -0.343), (-0.481, -0.417), (-0.554, -0.435), (-0.504, -0.639), (-0.202, -0.563), (-0.019, -0.685), (0.083, -0.617), (0.169, -0.483), (0.352, -0.678), (0.448, -0.844), (0.433, 0.357)],
+        "rooms":[(-0.657, 0.709), (-0.369, 0.67), (-0.691, 0.339), (-0.75, 0.165), (-0.761, -0.285), (-0.406, -0.581), (0.085, -0.219), (-0.122, 0.515), (0.183, 0.58), (0.696, 0.491), (0.741, 0.174), (0.481, 0.052), (0.207, -0.576), (0.574, -0.367), (0.557, -0.763)],
+        "planes": [(-0.569, 0.511), (-0.089, 0.331), (-0.683, -0.015), (-0.27, -0.719), (-0.015, -0.17), (0.224, 0.102), (0.554, 0.296), (0.87, 0.428), (0.574, -0.591)]
+    },
+    "荣都 (Rondo)": {
+        "vehicles": [(-0.689, 0.561), (-0.711, -0.28), (-0.672, -0.748), (-0.374, 0.322), (-0.274, -0.059), (-0.333, -0.319), (-0.378, -0.693), (-0.267, 0.93), (-0.091, 0.467), (0.087, 0.12), (0.235, -0.254), (0.211, -0.619), (0.244, -0.737), (0.137, 0.744), (0.683, 0.648), (0.548, 0.515), (0.594, 0.174), (0.606, -0.193), (0.817, -0.461), (0.685, -0.554)],
+        "rooms": [(-0.639, 0.669), (-0.652, 0.206), (-0.643, -0.174), (-0.68, -0.594), (-0.256, 0.772), (-0.259, -0.261), (-0.17, -0.717), (-0.072, 0.35), (0.235, 0.498), (0.144, -0.078), (0.213, -0.811), (0.43, 0.772), (0.4, -0.493), (0.628, -0.05), (0.728, 0.324)],
+        "planes": [(0.909, 0.078), (0.906, 0.439), (0.848, 0.754), (0.448, 0.941), (-0.196, 0.92), (-0.63, 0.67), (-0.869, 0.47), (-0.785, -0.513), (-0.459, -0.783), (-0.037, -0.746)]
+    },
+    "维寒迪 (Vikendi)": {
+        "vehicles":[(-0.702, 0.557), (-0.589, 0.513), (-0.38, 0.576), (-0.091, 0.696), (0.078, 0.77), (-0.072, 0.519), (-0.744, 0.113), (-0.506, 0.194), (-0.302, 0.265), (-0.163, 0.319), (0.009, 0.428), (0.256, 0.559), (0.483, 0.672), (0.111, 0.233), (0.283, 0.391), (0.563, 0.474), (-0.744, -0.196), (-0.569, -0.109), (-0.581, -0.091), (-0.339, -0.083), (-0.072, -0.03), (0.248, 0.006), (0.328, 0.154), (0.446, 0.107), (0.591, 0.23), (0.685, 0.23), (-0.672, -0.476), (-0.537, -0.55), (-0.261, -0.289), (-0.091, -0.359), (-0.069, -0.335), (0.343, -0.252), (0.644, -0.317), (0.706, -0.122), (0.502, -0.035), (-0.378, -0.78), (-0.22, -0.596), (0.033, -0.65), (0.313, -0.781), (0.48, -0.591)],
+        "rooms": [(-0.657, 0.056), (-0.324, 0.611), (-0.417, -0.383), (0.007, 0.211), (0.328, 0.674), (-0.03, -0.607), (0.159, -0.217), (0.537, 0.396), (0.683, 0.046), (0.493, -0.444)],
+        "bear_caves": [(-0.296, 0.669), (0.293, 0.661), (0.491, 0.569), (0.402, 0.28), (0.157, 0.126), (0.633, 0.048), (0.53, -0.448), (0.289, -0.446), (-0.065, -0.502), (-0.074, -0.594)],
+        "planes": [(-0.607, 0.643), (-0.576, 0.013), (-0.111, 0.439), (-0.683, -0.424), (-0.43, -0.743), (0.044, -0.08), (0.339, 0.248), (0.457, 0.504), (0.209, -0.698), (0.624, -0.394)],
+        "crowbar_rooms":[(-0.652, 0.656), (-0.243, 0.687), (-0.528, 0.246), (-0.207, 0.285), (-0.106, 0.465), (-0.561, -0.094), (-0.748, -0.206), (0.115, 0.128), (0.285, 0.354), (0.309, 0.104), (-0.28, -0.298), (-0.215, -0.476), (-0.011, -0.352), (-0.113, -0.702), (0.061, -0.646), (0.304, -0.52), (0.487, -0.211), (0.622, -0.435), (0.681, -0.135)],
+        "lab_camps":[(-0.506, 0.341), (-0.443, 0.463), (-0.209, 0.524), (-0.194, 0.741)]
+    },
+    "帝斯顿 (Deston)": {
+        "vehicles": [(-0.354, 0.869), (-0.815, 0.624), (-0.526, 0.613), (-0.293, 0.672), (0.28, 0.763), (-0.924, 0.363), (-0.396, 0.424), (-0.174, 0.583), (-0.911, -0.065), (-0.554, 0.181), (-0.337, 0.25), (-0.124, 0.335), (0.148, 0.328), (0.361, 0.485), (0.693, 0.533), (0.813, 0.461), (0.481, 0.317), (-0.152, 0.113), (-0.448, -0.152), (-0.581, -0.152), (-0.644, -0.541), (-0.52, -0.289), (-0.191, -0.057), (-0.178, -0.596), (-0.102, -0.4), (-0.076, -0.183), (0.154, -0.487), (0.157, -0.767), (0.291, -0.065), (0.348, -0.565), (0.491, -0.08), (0.559, -0.333), (0.835, 0.096)],
+        "safty_doors": [(-0.322, 0.87), (-0.543, 0.646), (-0.53, 0.637), (-0.524, 0.556), (-0.572, 0.17), (-0.23, 0.339), (-0.598, -0.119), (-0.437, -0.157), (-0.194, 0.119), (0.111, 0.33), (0.248, 0.519), (0.269, 0.78), (0.644, 0.541), (-0.717, -0.544), (-0.065, -0.394), (-0.061, -0.111), (0.122, 0.0), (0.396, -0.574), (0.802, 0.226), (0.456, -0.161), (0.476, -0.152), (0.502, -0.156), (0.563, -0.128), (0.606, -0.141), (0.596, -0.152), (0.619, -0.122), (0.644, -0.128), (0.661, -0.113), (0.598, -0.061), (0.617, -0.015), (0.585, 0.0), (0.543, -0.017), (0.496, -0.031), (0.517, -0.039), (0.517, -0.024)],
+        "planes": [(-0.702, 0.77), (-0.83, -0.293), (-0.844, -0.124), (-0.33, 0.259), (-0.243, 0.43), (0.078, -0.485), (0.019, -0.161), (0.157, 0.196), (0.331, 0.478), (0.606, -0.494)],
+    }
+}
+
+POINT_CONFIG = {
+    "planes": {"name": "飞机点位", "color": "#FFA500"},
+    "rooms": {"name": "密室位置", "color": "#FF0000"},
+    "vehicles": {"name": "固定刷车", "color": "#00FFFF"},
+    "bear_caves": {"name": "熊洞位置", "color": "#8B4513"},
+    "crowbar_rooms": {"name": "撬棍房", "color": "#FF69B4"},
+    "lab_camps": {"name": "实验营地", "color": "#32CD32"},
+    "safty_doors": {"name": "安全门", "color": "#FF0000"}
+}
+
+
+class MapPointAssistant:
+    """大地图静态点位助手 - 集成 RegionManager 版"""
+
+    def __init__(self, root, region_manager, config_file="config.json"):
+        self.root = root
+        self.region_manager = region_manager
+        self.config_file = config_file
+
+        # 从 RegionManager 获取大地图区域
+        self.monitor = self.region_manager.get_real_region("largemap_region")
+        # 地图数据（从静态数据或 config 中的自定义数据合并，此处保留原 MAP_DATA）
+        self.map_data = MAP_DATA
+
+        self.is_enabled = False
+        self.current_map_name = "艾伦格 (Erangel)"
+        self.active_categories = {"vehicles", "planes", "rooms", "bear_caves", "crowbar_rooms", "lab_camps", "safty_doors"}
+        self.current_marker_size = "medium"
+
+        self.calib_state = "IDLE"      # IDLE / CALIB_1 / CALIB_2
+        self.calib_pt1 = None
+
+        self.overlay = None
+        self.canvas = None
+        self._init_overlay()
+
+    def _init_overlay(self):
+        self.overlay = tk.Toplevel(self.root)
+        self.overlay.attributes("-fullscreen", True)
+        self.overlay.attributes("-topmost", True)
+        self.overlay.attributes("-transparentcolor", "black")
+        self.overlay.overrideredirect(True)
+
+        self.canvas = tk.Canvas(self.overlay, bg="black", highlightthickness=0)
+        self.canvas.pack(fill=tk.BOTH, expand=True)
+
+        self.canvas.bind("<Button-1>", self._on_calib_left)
+        self.canvas.bind("<Button-3>", self._on_calib_right)
+
+        self.overlay.update_idletasks()
+
+        # 一次性强制置顶
+        try:
+            hwnd = int(self.overlay.frame(), 16)
+            GWLP_EXSTYLE = -20
+            WS_EX_TOPMOST = 0x00000008
+            ex_style = ctypes.windll.user32.GetWindowLongW(hwnd, GWLP_EXSTYLE)
+            ctypes.windll.user32.SetWindowLongW(hwnd, GWLP_EXSTYLE, ex_style | WS_EX_TOPMOST)
+
+            HWND_TOPMOST = -1
+            SWP_NOMOVE = 0x0002
+            SWP_NOSIZE = 0x0001
+            ctypes.windll.user32.SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE)
+
+            ctypes.windll.user32.SetForegroundWindow(hwnd)
+            ctypes.windll.user32.BringWindowToTop(hwnd)
+            ctypes.windll.user32.SetWindowDisplayAffinity(hwnd, 17)
+        except Exception as e:
+            print(f"[地图助手] 窗口置顶失败: {e}")
+
+    # ================= 公共 API =================
+    def set_enabled(self, enabled: bool):
+        self.is_enabled = enabled
+        self._render_points()
+
+    def set_marker_size(self, size_str):
+        self.current_marker_size = size_str
+        self._render_points()
+
+    def set_map(self, map_name):
+        self.current_map_name = map_name
+        self._render_points()
+
+    def trigger_calibration(self):
+        """开始校准大地图区域（正方形框选）"""
+        self.calib_state = "CALIB_1"
+        # 临时取消透明色和设置半透明便于框选
+        self.overlay.attributes("-transparentcolor", "")
+        self.overlay.attributes("-alpha", 0.4)
+        self.canvas.config(bg="#111111", cursor="crosshair")
+        self.canvas.delete("all")
+        self.calib_pt1 = None
+
+    def cancel_calibration(self):
+        """取消校准"""
+        if self.calib_state != "IDLE":
+            self._exit_calibration()
+
+    # ================= 校准回调 =================
+    def _on_calib_left(self, event):
+        if self.calib_state == "CALIB_1":
+            self.calib_pt1 = (event.x, event.y)
+            self.calib_state = "CALIB_2"
+            self.canvas.create_oval(event.x - 3, event.y - 3, event.x + 3, event.y + 3, fill="red", tags="temp_calib")
+        elif self.calib_state == "CALIB_2":
+            x1, y1 = self.calib_pt1
+            x2, y2 = event.x, event.y
+            cx = (x1 + x2) // 2
+            cy = (y1 + y2) // 2
+            side = max(abs(x2 - x1), abs(y2 - y1))
+            if side < 10:
+                return
+            # 构造正方形区域
+            left = cx - side // 2
+            top = cy - side // 2
+            self.monitor = {"left": left, "top": top, "width": side, "height": side}
+
+            # 更新 RegionManager 中的 largemap_region
+            base_x = int(round(left / self.region_manager.scale_x))
+            base_y = int(round(top / self.region_manager.scale_y))
+            base_side = int(round(side / ((self.region_manager.scale_x + self.region_manager.scale_y) / 2)))
+            # 注意：RegionManager 中的 base_regions 存储的是基于基准分辨率（1920x1080）的坐标
+            # 我们直接更新 real_regions 并同步保存到配置文件
+            self.region_manager.real_regions["largemap_region"] = {
+                "left": left, "top": top, "width": side, "height": side
+            }
+            self.region_manager.base_regions["largemap_region"] = {
+                "left": base_x, "top": base_y, "width": base_side, "height": base_side
+            }
+            self.region_manager._save_config()
+
+            self._exit_calibration()
+            self._render_points()
+
+    def _on_calib_right(self, event):
+        if self.calib_state != "IDLE":
+            self._exit_calibration()
+
+    def _exit_calibration(self):
+        self.calib_state = "IDLE"
+        self.overlay.attributes("-alpha", 1.0)
+        self.overlay.attributes("-transparentcolor", "black")
+        self.canvas.config(bg="black", cursor="arrow")
+        self.canvas.delete("temp_calib")
+
+    # ================= 点位渲染 =================
+    def _render_points(self):
+        self.canvas.delete("map_point")
+        if not self.is_enabled or not self.monitor:
+            return
+
+        # 获取当前地图数据
+        current_map_data = self.map_data.get(self.current_map_name, {})
+        if not current_map_data:
+            return
+
+        # 计算地图中心与半边长
+        cx = self.monitor["left"] + self.monitor["width"] / 2
+        cy = self.monitor["top"] + self.monitor["height"] / 2
+        half_side = self.monitor["width"] / 2
+
+        # 根据当前标记大小配置半径和样式
+        if self.current_marker_size == "small":
+            r, fill_active, line_width = 2, True, 1
+        elif self.current_marker_size == "medium":
+            r, fill_active, line_width = 3, False, 1
+        else:  # large
+            r, fill_active, line_width = 4, False, 3
+
+        for cat_key in self.active_categories:
+            if cat_key not in current_map_data:
+                continue
+            color = POINT_CONFIG.get(cat_key, {"color": "white"})["color"]
+            for norm_x, norm_y in current_map_data[cat_key]:
+                screen_x = cx + norm_x * half_side
+                screen_y = cy - norm_y * half_side
+                if fill_active:
+                    self.canvas.create_oval(screen_x - r, screen_y - r,
+                                            screen_x + r, screen_y + r,
+                                            fill=color, outline="black", width=line_width,
+                                            tags="map_point")
+                else:
+                    self.canvas.create_oval(screen_x - r, screen_y - r,
+                                            screen_x + r, screen_y + r,
+                                            fill="", outline=color, width=line_width,
+                                            tags="map_point")
