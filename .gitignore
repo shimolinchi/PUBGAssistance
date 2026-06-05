@@ -5,6 +5,10 @@
 *.exe
 *.zip
 
+pubg助手/
+tip.txt
+
+
 # 2. Python 缓存与虚拟环境
 __pycache__/
 *.py[cod]

@@ -63,7 +63,7 @@
 windows打包
 
 ```bash
-nuitka --onefile --plugin-enable=tk-inter --windows-disable-console --windows-icon-from-ico=icon.ico main.py
+nuitka --onefile --plugin-enable=tk-inter --windows-disable-console --windows-icon-from-ico=icon.ico --include-data-files=icon.ico=icon.ico main.py
 ```
 
 ### 快捷键配置

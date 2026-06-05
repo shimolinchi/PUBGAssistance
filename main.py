@@ -75,6 +75,7 @@ class TacticalHub:
         self.root.attributes("-topmost", True)
 
         self.config_file = "config.json"
+        self._set_app_icon('icon.ico')
         self.region_manager = RegionManager(self.root, config_file=self.config_file)
 
         with mss.MSS() as sct:
@@ -173,6 +174,24 @@ class TacticalHub:
         self.init_ui()
         self.start_listeners()
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
+
+    def _set_app_icon(self, icon_name):
+        """
+        获取资源路径并设置窗口图标，兼容 Nuitka 单文件打包与本地调试环境。
+        """
+        # 判断是否被 Nuitka 编译
+        if "__compiled__" in globals():
+            base_path = os.path.dirname(__file__)
+        else:
+            base_path = os.path.abspath(os.path.dirname(__file__))
+        
+        icon_path = os.path.join(base_path, icon_name)
+        
+        try:
+            self.root.iconbitmap(icon_path)
+        except Exception as e:
+            # 防止在某些没有界面的无头环境或图标丢失时程序直接崩溃
+            print(f"警告: 无法加载图标 - {e}")
 
     def init_ui(self):
         self.notebook = ttk.Notebook(self.root)
