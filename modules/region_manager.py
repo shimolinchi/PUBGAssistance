@@ -31,6 +31,18 @@ class RegionManager:
             "elevation_region": {"left": 960, "top": 540, "width": 100, "height": 300},
             "compass_region": {"left": 800, "top": 20, "width": 300, "height": 40},
             "crosshair_region": {"left": 800, "top": 900, "width": 300, "height": 100},
+
+            "weapon1_name_region": {"left": 500, "top": 300, "width": 150, "height": 40},
+            "weapon1_scope_region": {"left": 500, "top": 360, "width": 80, "height": 30},
+            "weapon1_grip_region": {"left": 500, "top": 400, "width": 80, "height": 30},
+            "weapon1_muzzle_region": {"left": 500, "top": 440, "width": 80, "height": 30},
+            "weapon1_stock_region": {"left": 500, "top": 480, "width": 80, "height": 30},
+
+            "weapon2_name_region": {"left": 1300, "top": 300, "width": 150, "height": 40},
+            "weapon2_scope_region": {"left": 1300, "top": 360, "width": 80, "height": 30},
+            "weapon2_grip_region": {"left": 1300, "top": 400, "width": 80, "height": 30},
+            "weapon2_muzzle_region": {"left": 1300, "top": 440, "width": 80, "height": 30},
+            "weapon2_stock_region": {"left": 1300, "top": 480, "width": 80, "height": 30},
         }
         
         self.base_scales = {

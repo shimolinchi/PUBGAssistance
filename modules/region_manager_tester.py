@@ -11,7 +11,7 @@ class RegionManagerTester:
     def __init__(self, root):
         self.root = root
         self.root.title("RegionManager 校准测试台")
-        self.root.geometry("420x650")
+        self.root.geometry("420x850")
         self.root.attributes("-topmost", True)
         self.root.configure(bg="#2C3E50")
 
@@ -61,6 +61,19 @@ class RegionManagerTester:
             ("📈 仰角区域 (elevation_region)", "elevation_region"),
             ("🧭 指南针区域 (compass_region)", "compass_region"),
             ("🎯 准星区域 (crosshair_region)", "crosshair_region"),
+            # === 武器1区域 ===
+            ("🔫 武器1 名称区域 (weapon1_name_region)", "weapon1_name_region"),
+            ("🔍 武器1 倍镜区域 (weapon1_scope_region)", "weapon1_scope_region"),
+            ("✊ 武器1 握把区域 (weapon1_grip_region)", "weapon1_grip_region"),
+            ("🔫 武器1 枪口区域 (weapon1_muzzle_region)", "weapon1_muzzle_region"),
+            ("🪚 武器1 枪托区域 (weapon1_stock_region)", "weapon1_stock_region"),
+
+            # === 武器2区域 ===
+            ("🔫 武器2 名称区域 (weapon2_name_region)", "weapon2_name_region"),
+            ("🔍 武器2 倍镜区域 (weapon2_scope_region)", "weapon2_scope_region"),
+            ("✊ 武器2 握把区域 (weapon2_grip_region)", "weapon2_grip_region"),
+            ("🔫 武器2 枪口区域 (weapon2_muzzle_region)", "weapon2_muzzle_region"),
+            ("🪚 武器2 枪托区域 (weapon2_stock_region)", "weapon2_stock_region"),
         ]
 
         for idx, (label, region_name) in enumerate(regions):

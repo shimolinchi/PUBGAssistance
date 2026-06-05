@@ -17,10 +17,10 @@ from modules.throwables_assistant import ThrowablesAssistant
 from modules.vss_assistant import VssAssistant
 from modules.crossbow_assistant import CrossbowAssistant
 from modules.largemap_radar import AutoMapDistanceAssistant
+from modules.weapon_identifier import WeaponIdentifier
+from modules.scope_identifier import ScopeIdentifier
+from modules.recoil_control import RecoilControlModule
 from modules.gesture_identifier import GestureIdentifier
-from modules.weapon_detector import WeaponDetector
-from modules.equipment_detector import EquipmentDetector
-from modules.recoil_control_new import RecoilControlModule as RecoilControlModuleNew
 
 class RoundedButton(tk.Canvas):
     def __init__(self, parent, width, height, radius, text, command, text_size = 10, is_toggle=False, *args, **kwargs):
@@ -73,6 +73,7 @@ class TacticalHub:
         self.root.geometry("250x400")
         self.root.configure(bg="#F9FAFB")
         self.root.attributes("-topmost", True)
+        # self.root.withdraw()  # 初始隐藏
 
         self.config_file = "config.json"
         self.region_manager = RegionManager(self.root, config_file=self.config_file)
@@ -81,7 +82,7 @@ class TacticalHub:
             monitor = sct.monitors[1]
             self.sw, self.sh = monitor["width"], monitor["height"]
 
-        # 基础模块
+        # 模块初始化
         self.minimap = MinimapRadarModule(self.root, self.region_manager, config_file=self.config_file)
         self.elevation = ElevationRadarModule(self.root, self.region_manager, fps=30, config_file=self.config_file)
         self.map_assist = MapPointAssistant(self.root, self.region_manager, config_file=self.config_file)
@@ -93,62 +94,41 @@ class TacticalHub:
         self.vss_assist = VssAssistant(self.root, self.region_manager, self.minimap, fps=30, config_file=self.config_file)
         self.crossbow_assist = CrossbowAssistant(self.root, self.region_manager, self.minimap, fps=30, config_file=self.config_file)
 
-        # 新模块
-        self.equipment_detector = EquipmentDetector(self.region_manager, fps=5, confirm_frames=2, idle_timeout=2.0, debug=False)
-        self.weapon_detector = WeaponDetector(self.region_manager, fps=30, match_threshold=0.55)
-        self.recoil = RecoilControlModuleNew(config_file=self.config_file)
-
-        # 姿势识别
+        self.weapon_id = WeaponIdentifier(self.region_manager, threshold=0.5)
+        self.scope_id = ScopeIdentifier(self.region_manager, threshold=0.55)
+        self.scope_id.set_enabled(True)      # 启用倍镜识别
         self.gesture_id = GestureIdentifier(region_manager=self.region_manager)
+        self.recoil = RecoilControlModule(config_file=self.config_file)
 
-        # 状态变量
         self.weapon_detection_enabled = False
         self.display_enabled = False
         self.recoil_enabled = False
         self.current_weapon = None
-        self.current_gesture = None
-        self.current_weapons_attachments = {1: {}, 2: {}}   # 存储装备栏识别的两个武器配件
-
+        self._stop_detection = False
+        self.detection_thread = None
         self.left_pressed = False
         self.middle_pressed = False
         self.alt_pressed = False
-        self._is_capturing = False
-
-        # 状态覆盖层
+        self.current_scope = None
+        self.current_gesture = None
+        self.scope_update_after_id = None
+        self.scope_update_delay = 500  # 毫秒
+        self._is_capturing = False  
         self.status_overlay = None
         self.status_canvas = None
         self._init_status_overlay()
 
-        # 回调函数
-        def on_equipment_update(is_open, weapons):
-            if is_open:
-                self.current_weapons_attachments = weapons
-                w1 = weapons[1].get("name") if weapons[1] else None
-                w2 = weapons[2].get("name") if weapons[2] else None
-                self.weapon_detector.update_primary_weapons(w1, w2)
-                # 更新压枪模块的配件（以武器1为例，可根据当前武器选择）
-                attachments = {}
-                if weapons[1]:
-                    attachments["scope"] = weapons[1].get("scope")
-                    attachments["grip"] = weapons[1].get("grip")
-                    attachments["muzzle"] = weapons[1].get("muzzle")
-                    attachments["stock"] = weapons[1].get("stock")
-                self.recoil.update_attachments(attachments)
-            self.update_status_display()   # 刷新状态栏
-
-        def on_weapon_detected(weapon_name, score):
-            if weapon_name and score >= 0.5:
-                self.current_weapon = weapon_name
-                if self.recoil_enabled and weapon_name not in ["Rocket", "Grenade", "VSS", "Crossbow"]:
-                    self.recoil.update_current_weapon(weapon_name)
+        def on_weapon_identified(weapon, score):
+            if weapon and score >= 0.5:
+                self.current_weapon = weapon
+                self.update_weapon_ui(weapon)
             else:
                 self.current_weapon = None
-                if self.recoil_enabled:
-                    self.recoil.update_current_weapon(None)
-            self.update_weapon_ui(self.current_weapon)
+                self.update_weapon_ui(None)
             self.update_status_full()
             self.update_status_display()
 
+        # 姿势识别回调
         def on_gesture_identified(gesture, score):
             if gesture and score >= 0.7:
                 self.current_gesture = gesture
@@ -160,8 +140,7 @@ class TacticalHub:
             self.update_status_display()
 
         # 设置回调
-        self.equipment_detector.set_enabled(False, on_equipment_update)
-        self.weapon_detector.set_enabled(False, on_weapon_detected)
+        self.weapon_id.set_enabled(False, on_weapon_identified)
         self.gesture_id.set_enabled(False, on_gesture_identified)
 
         # 快捷键配置
@@ -170,8 +149,7 @@ class TacticalHub:
             "toggle_display": "<ctrl>+<shift>+<space>",
             "measure_map": "<f1>",
             "toggle_recoil": "<ctrl>+<shift>+<tab>",
-            "toggle_weapon_detection": "<f2>",
-            "toggle_equipment": "tab"
+            "toggle_weapon_detection": "<f2>"
         }
         self.load_hotkey_config()
 
@@ -183,26 +161,30 @@ class TacticalHub:
         self.notebook = ttk.Notebook(self.root)
         self.notebook.pack(fill="both", expand=True, padx=5, pady=5)
 
+        # 地图选项卡
         self.map_tab = tk.Frame(self.notebook, bg="#F9FAFB")
         self.notebook.add(self.map_tab, text="地图点位")
-        self.map_tab.columnconfigure(0, weight=1)
+        self.map_tab.columnconfigure(0, weight=1)         
         self.build_map_tab()
 
+        # 启动选项卡
         self.launch_tab = tk.Frame(self.notebook, bg="#F9FAFB")
         self.notebook.add(self.launch_tab, text="启动助手")
         self.build_launch_tab()
 
+        # 校准选项卡
         self.calib_tab = tk.Frame(self.notebook, bg="#F9FAFB")
         self.notebook.add(self.calib_tab, text="校准区域")
         self.build_calib_tab()
 
+        # 按键选项卡
         self.key_tab = tk.Frame(self.notebook, bg="#F9FAFB")
         self.notebook.add(self.key_tab, text="按键设置")
         self.build_key_tab()
 
         self.status_var = tk.StringVar(value="就绪")
         self.status_bar = tk.Label(self.root, textvariable=self.status_var, bd=1, relief=tk.SUNKEN,
-                                   anchor=tk.CENTER, bg="#3498DB", fg="#FFFFFF", font=("Microsoft YaHei", 10, "bold"))
+                                anchor=tk.CENTER, bg="#3498DB", fg="#FFFFFF", font=("Microsoft YaHei", 10, "bold"))
         self.status_bar.pack(side=tk.BOTTOM, fill=tk.X)
 
     def _init_status_overlay(self):
@@ -211,11 +193,11 @@ class TacticalHub:
         self.status_overlay.attributes("-transparentcolor", "black")
         self.status_overlay.overrideredirect(True)
         x = 10
-        y = self.sh - 160
-        self.status_overlay.geometry(f"450x120+{x}+{y}")
-        self.status_canvas = tk.Canvas(self.status_overlay, bg="black", highlightthickness=0, width=450, height=120)
+        y = self.sh - 60
+        self.status_overlay.geometry(f"300x40+{x}+{y}")
+        self.status_canvas = tk.Canvas(self.status_overlay, bg="black", highlightthickness=0, width=300, height=40)
         self.status_canvas.pack()
-        self.status_overlay.withdraw()
+        self.status_overlay.withdraw() 
 
     def set_status(self, status_text, status_type="info"):
         """设置状态栏文本和背景色
@@ -307,77 +289,29 @@ class TacticalHub:
 
 
     def build_calib_tab(self):
-        # 第0行：调试按钮（占两列）
         self.btn_debug = RoundedButton(self.calib_tab, 220, 32, 25, "显示所有区域框", command=self.toggle_debug, is_toggle=True)
-        self.btn_debug.grid(row=0, column=0, columnspan=2, pady=5)
+        self.btn_debug.pack(pady=5)
 
-        # 原有六个区域按钮列表（名称和区域键）
-        existing_items = [
-            ("小地图", "minimap_region"),
-            ("大地图", "largemap_region"),
-            ("垂直测高", "elevation_region"),
+        btn_calib_largemap_scale = RoundedButton(self.calib_tab, 220, 36, 25, "校准大地图 1km 比例尺",
+                                                command=lambda: self.region_manager.calibrate_scale("largemap_1km_px"))
+        btn_calib_largemap_scale.pack(pady=3)
+
+        regions = [
+            ("小地图区域", "minimap_region"),
+            ("大地图区域", "largemap_region"),
+            ("垂直测高区域", "elevation_region"),
             ("准星区域", "crosshair_region"),
-            ("武器栏", "weapon_region"),
-            ("1km比例尺", "largemap_1km_px")   # 比例尺单独处理，需要调用 calibrate_scale
+            ("倍镜检测区域", "scope_region"),
+            ("武器栏区域", "weapon_region")
         ]
+        for name, key in regions:
+            btn = RoundedButton(self.calib_tab, 220, 36, 25, f"校准{name}",
+                                command=lambda k=key: self.region_manager.calibrate_region(k))
+            btn.pack(pady=3)
 
-        # 将原有按钮放在第1-3行，每行两个
-        row = 1
-        for i in range(0, len(existing_items), 2):
-            # 左列按钮
-            name1, key1 = existing_items[i]
-            if key1 == "largemap_1km_px":
-                btn1 = RoundedButton(self.calib_tab, 107, 30, 25, f"校准{name1}",
-                                    command=lambda: self.region_manager.calibrate_scale("largemap_1km_px"))
-            else:
-                btn1 = RoundedButton(self.calib_tab, 107, 30, 25, f"校准{name1}",
-                                    command=lambda k=key1: self.region_manager.calibrate_region(k))
-            btn1.grid(row=row, column=0, padx=5, pady=3, sticky="ew")
-
-            # 右列按钮（如果有第二个）
-            if i+1 < len(existing_items):
-                name2, key2 = existing_items[i+1]
-                if key2 == "largemap_1km_px":
-                    btn2 = RoundedButton(self.calib_tab, 107, 30, 25, f"校准{name2}",
-                                        command=lambda: self.region_manager.calibrate_scale("largemap_1km_px"))
-                else:
-                    btn2 = RoundedButton(self.calib_tab, 107, 30, 25, f"校准{name2}",
-                                        command=lambda k=key2: self.region_manager.calibrate_region(k))
-                btn2.grid(row=row, column=1, padx=5, pady=3, sticky="ew")
-            row += 1
-
-        # 武器1和武器2配件区域（共五行）
-        weapon1_items = [
-            ("武器1名称", "weapon1_name_region"),
-            ("武器1倍镜", "weapon1_scope_region"),
-            ("武器1握把", "weapon1_grip_region"),
-            ("武器1枪口", "weapon1_muzzle_region"),
-            ("武器1枪托", "weapon1_stock_region"),
-        ]
-        weapon2_items = [
-            ("武器2名称", "weapon2_name_region"),
-            ("武器2倍镜", "weapon2_scope_region"),
-            ("武器2握把", "weapon2_grip_region"),
-            ("武器2枪口", "weapon2_muzzle_region"),
-            ("武器2枪托", "weapon2_stock_region"),
-        ]
-
-        for i in range(5):
-            # 武器1按钮
-            name1, key1 = weapon1_items[i]
-            btn1 = RoundedButton(self.calib_tab, 107, 30, 25, f"校准{name1}",
-                                command=lambda k=key1: self.region_manager.calibrate_region(k))
-            btn1.grid(row=row, column=0, padx=5, pady=3, sticky="ew")
-            # 武器2按钮
-            name2, key2 = weapon2_items[i]
-            btn2 = RoundedButton(self.calib_tab, 107, 30, 25, f"校准{name2}",
-                                command=lambda k=key2: self.region_manager.calibrate_region(k))
-            btn2.grid(row=row, column=1, padx=5, pady=3, sticky="ew")
-            row += 1
-            
     def build_key_tab(self):
         self.key_frame = tk.Frame(self.key_tab, bg="#F9FAFB")
-        self.key_frame.pack(fill="both", expand=True, padx=5, pady=1)
+        self.key_frame.pack(fill="both", expand=True, padx=5, pady=5)
 
         key_configs = [
             ("手雷瞬爆", "throw"),
@@ -385,14 +319,13 @@ class TacticalHub:
             ("大地图测距", "measure_map"),
             ("压枪开关", "toggle_recoil"),
             ("武器检测开关", "toggle_weapon_detection"),
-            ("打开装备栏", "toggle_equipment"),
         ]
         self.key_labels = {}
 
         for label, action in key_configs:
             # 每个功能使用一个容器 Frame
             func_frame = tk.Frame(self.key_frame, bg="#F9FAFB")
-            func_frame.pack(fill="x", pady=1)
+            func_frame.pack(fill="x", pady=2)
 
             left_frame = tk.Frame(func_frame, bg="#F9FAFB")
             left_frame.pack(side="left", fill="both", expand=True)
@@ -414,15 +347,14 @@ class TacticalHub:
             record_btn.pack(side="right", padx=2)
 
         # 保存快捷键按钮
-        btn_frame = tk.Frame(self.key_frame, bg="#F9FAFB")
-        btn_frame.pack(pady=3)
-        save_btn = RoundedButton(btn_frame, 107, 30, 25, "保存快捷键", 
+        save_btn = RoundedButton(self.key_frame, 220, 30, 25, "保存快捷键", 
                                 command=self.save_hotkey_config, is_toggle=False)
-        save_btn.pack(side=tk.LEFT, padx=5)
-        default_btn = RoundedButton(btn_frame, 107, 30, 25, "恢复默认", 
+        save_btn.pack(pady=5)
+
+        # 恢复默认按钮
+        default_btn = RoundedButton(self.key_frame, 220, 30, 25, "恢复默认", 
                                     command=self.reset_default_hotkeys, is_toggle=False)
-        default_btn.pack(side=tk.LEFT, padx=5)
-        default_btn.pack(pady=1)
+        default_btn.pack(pady=5)
 
     def toggle_assistant(self, key):
         # 仅当显示层开启且当前武器匹配时才允许手动切换
@@ -498,8 +430,8 @@ class TacticalHub:
         def finish_capture(main_key):
             combo_str = "+".join(modifiers + [main_key])
             # 手雷瞬爆只允许单键，不允许带修饰键
-            if action_key in ("throw", "toggle_equipment") and modifiers:
-                # 手雷瞬爆和打开装备栏只允许单键，不允许带修饰键
+            if action_key == "throw" and modifiers:
+                # 如果用户按了修饰键，则忽略并提示
                 key_label.config(text="仅允许单键")
                 self.root.after(1000, lambda: key_label.config(text=self.format_hotkey(self.hotkeys[action_key])))
                 self._is_capturing = False
@@ -537,13 +469,8 @@ class TacticalHub:
         self.weapon_detection_enabled = not self.weapon_detection_enabled
         self.btn_weapon_detect.set_active(self.weapon_detection_enabled)
         self.btn_weapon_detect.set_text(f"{'关闭' if self.weapon_detection_enabled else '开启'}武器检测")
-        self.weapon_detector.set_enabled(self.weapon_detection_enabled)
-        self.gesture_id.set_enabled(self.weapon_detection_enabled)
-        self.equipment_detector.set_enabled(self.weapon_detection_enabled)   # 新增
-        if not self.weapon_detection_enabled:
-            self.current_weapon = None
-            self.update_weapon_ui(None)
-        self.update_status_display()
+        # 异步执行耗时的关闭操作，避免阻塞按钮响应
+        self.root.after(10, lambda: self._do_weapon_detection_state_change())
 
     def _do_weapon_detection_state_change(self):
         self.weapon_id.set_enabled(self.weapon_detection_enabled)
@@ -560,118 +487,141 @@ class TacticalHub:
             return
         if not self.status_overlay:
             return
-
-        # 映射表
-        grip_map = {
-            "vertical": "垂直", "half": "半截", "angled": "斜握",
-            "light": "轻握", "laser": "激光", "thumb": "拇指"
-        }
-        stock_map = {
-            "tactical": "战术", "heavy": "重型", "micro": "微托"
-        }
         scope_map = {
-            "red_dot": "红点", "holographic": "全息", "x2": "二倍", "x3": "三倍",
-            "x4": "四倍", "x6": "六倍", "x8": "八倍", "iron": "机瞄",
-            "multiple": "蛤蟆"
+            "red_dot": "红点",
+            "holographic": "全息",
+            "x2": "二倍镜",
+            "x3": "三倍镜",
+            "x4": "四倍镜",
+            "x6": "六倍镜",
+            "x8": "八倍镜",
+            "iron": "机瞄",
+            "hip": "腰射"
         }
-        muzzle_map = {
-            "rifle_compensator": "步枪补偿", "rifle_suppressor": "步枪消焰", "rifle_silencer": "步枪消音", "rifle_braker": "制退",
-            "smg_compensator": "冲锋补偿", "smg_suppressor": "冲锋消焰", "smg_silencer": "冲锋消音",
-        }
-        gesture_map = {"stand": "站", "squat": "蹲", "lie": "趴"}
+        # 姿势映射
+        gesture_map = {"stand": "站立", "squat": "蹲下", "lie": "趴下"}
 
-        w1 = self.current_weapons_attachments.get(1, {})
-        w2 = self.current_weapons_attachments.get(2, {})
-
-        def format_weapon(weapon_data):
-            name = weapon_data.get("name") or "无"
-            parts = [name]
-            scope = weapon_data.get("scope")
-            if scope:
-                parts.append(scope_map.get(scope, scope))
-            grip = weapon_data.get("grip")
-            if grip:
-                parts.append(grip_map.get(grip, grip))
-            muzzle = weapon_data.get("muzzle")
-            if muzzle:
-                parts.append(muzzle_map.get(muzzle, muzzle))
-            stock = weapon_data.get("stock")
-            if stock:
-                parts.append(stock_map.get(stock, stock))
-            return " | ".join(parts)
-
-        line1 = f"武器1: {format_weapon(w1)}"
-        line2 = f"武器2: {format_weapon(w2)}"
-        curr = self.current_weapon if self.current_weapon else "无"
-        pose = gesture_map.get(self.current_gesture, "?") if self.current_gesture else "?"
-        line3 = f"当前: {curr} | 姿势: {pose}"
-
-        self.status_canvas.delete("status_text")
-        y_offset = 5
-        for line in [line1, line2, line3]:
-            self.status_canvas.create_text(10, y_offset, anchor="nw", text=line, fill="white",
-                                        font=("Microsoft YaHei", 11, "bold"), tags="status_text")
-            y_offset += 25
-        self.status_overlay.deiconify()
-
-    def update_status_full(self):
-        # 简化版，仅显示当前武器和姿势（保留原逻辑）
         parts = []
         if self.current_weapon:
             parts.append(self.current_weapon)
+        if self.current_scope:
+            # 映射为中文
+            scope_display = scope_map.get(self.current_scope, self.current_scope)
+            parts.append(scope_display)
         if self.current_gesture:
-            gesture_map = {"stand": "站立", "squat": "蹲下", "lie": "趴下"}
             gesture_display = gesture_map.get(self.current_gesture, self.current_gesture)
             parts.append(gesture_display)
+
+        # 使用空格分隔，去掉竖线
+        text = "  ".join(parts) if parts else ""
+        self.status_canvas.delete("status_text")
+        if text:
+            self.status_canvas.create_text(10, 20, anchor="w", text=text,
+                                        fill="white",
+                                        font=("Microsoft YaHei", 15, "bold"),
+                                        tags="status_text")
+            self.status_overlay.deiconify()
+        else:
+            self.status_overlay.withdraw()
+
+    def update_status_full(self):
+        # 倍镜映射（根据模板文件夹名称）
+        scope_map = {
+            "red_dot": "红点",
+            "holographic": "全息",
+            "x2": "二倍镜",
+            "x3": "三倍镜",
+            "x4": "四倍镜",
+            "x6": "六倍镜",
+            "x8": "八倍镜",
+            "iron": "机瞄"
+        }
+        # 姿势映射
+        gesture_map = {"stand": "站立", "squat": "蹲下", "lie": "趴下"}
+
+        parts = []
+        if self.current_weapon:
+            parts.append(self.current_weapon)
+        if self.current_scope:
+            # 尝试映射，若找不到则保留原值（可能直接是数字或简称）
+            scope_display = scope_map.get(self.current_scope, self.current_scope)
+            parts.append(scope_display)
+        if self.current_gesture:
+            gesture_display = gesture_map.get(self.current_gesture, self.current_gesture)
+            parts.append(gesture_display)
+
         status_text = " | ".join(parts) if parts else "就绪"
+        # 根据武器识别状态设置背景色
         if self.current_weapon:
             self.set_status(status_text, "success")
         else:
             self.set_status(status_text, "info")
 
-    # def _update_scope_from_screenshot(self):
-    #     self.scope_update_after_id = None
-    #     try:
-    #         with mss.MSS() as sct:
-    #             scope, score, _ = self.scope_id.identify_current_scope(sct)
-    #             if scope and score >= 0.55:
-    #                 self.current_scope = scope
-    #                 if self.recoil_enabled:
-    #                     self.recoil.update_scope(scope)
-    #             else:
-    #                 self.current_scope = None
-    #                 if self.recoil_enabled:
-    #                     self.recoil.update_scope("hip")
-    #             self.update_status_full()
-    #             self.update_status_display()
-    #     except Exception as e:
-    #         print(f"[倍镜识别延迟错误] {e}")
+    def _update_scope_from_screenshot(self):
+        """延迟执行的倍镜识别，在右键按下一段时间后调用"""
+        self.scope_update_after_id = None   # 清除ID
+        try:
+            with mss.MSS() as sct:
+                scope, score, _ = self.scope_id.identify_current_scope(sct)
+                if scope and score >= 0.55:
+                    self.current_scope = scope
+                    if self.recoil_enabled:
+                        self.recoil.update_scope(scope)
+                else:
+                    # 未识别到倍镜，重置为机瞄（腰射）状态
+                    self.current_scope = None
+                    if self.recoil_enabled:
+                        self.recoil.update_scope("hip")
+                # 刷新状态栏显示
+                self.root.after(0, self.update_status_full)
+                self.update_status_display()
+        except Exception as e:
+            print(f"[倍镜识别延迟错误] {e}")
 
     def update_weapon_ui(self, weapon_name):
+
+        # 特殊武器列表
         special = {
             "Rocket": self.rocket,
             "Grenade": self.throwables,
             "VSS": self.vss_assist,
             "Crossbow": self.crossbow_assist
         }
+        # 先将所有特殊助手关闭，再根据当前武器开启对应的助手
         for name, mod in special.items():
             if self.display_enabled and weapon_name == name:
                 mod.enable_module(True)
             else:
                 mod.enable_module(False)
+
+        # 更新按钮状态
         for btn_key, mod in [("rocket", self.rocket), ("throwables", self.throwables),
-                             ("vss", self.vss_assist), ("crossbow", self.crossbow_assist)]:
+                            ("vss", self.vss_assist), ("crossbow", self.crossbow_assist)]:
             if btn_key in self.assistant_btns:
                 self.assistant_btns[btn_key].set_active(mod.is_enabled)
+
+        if weapon_name and weapon_name not in special:
+            if self.recoil_enabled:
+                self.recoil.update_weapon(weapon_name)
+                self.recoil.set_enabled(True)
+            else:
+                self.recoil.set_enabled(False)
+        else:
+            # 如果没有武器或是特殊武器，且压枪开关开启，也需要禁用
+            if self.recoil_enabled:
+                self.recoil.set_enabled(False)
 
     def toggle_display(self):
         self.display_enabled = not self.display_enabled
         self.btn_display.set_active(self.display_enabled)
         self.btn_display.set_text(f"{'关闭' if self.display_enabled else '开启'}瞄准辅助")
+        # 迫击炮始终随显示层开启
         self.mortar.enable_module(self.display_enabled)
         self.assistant_btns["mortar"].set_active(self.display_enabled and self.mortar.is_enabled)
+        # 重新评估特殊助手状态
         if self.current_weapon:
             self.update_weapon_ui(self.current_weapon)
+        # 同步雷达显示
         self.minimap.set_enabled(self.display_enabled)
         self.elevation.set_enabled(self.display_enabled)
         self.minimap.set_display(self.display_enabled)
@@ -685,31 +635,28 @@ class TacticalHub:
         self.btn_recoil.set_text(f"{'关闭' if self.recoil_enabled else '开启'}辅助压枪")
         self.recoil.set_enabled(self.recoil_enabled)
         if self.recoil_enabled:
+            # 立即同步当前武器、姿势、倍镜
             if self.current_weapon and self.current_weapon not in ["Rocket", "Grenade", "VSS", "Crossbow"]:
-                self.recoil.update_current_weapon(self.current_weapon)
+                self.recoil.update_weapon(self.current_weapon)
             if self.current_gesture:
                 self.recoil.update_stance(self.current_gesture)
-        else:
-            self.recoil.update_current_weapon(None)   # 关闭压枪时清除武器
+            if self.current_scope:
+                self.recoil.update_scope(self.current_scope)
 
     def toggle_debug(self):
         self.region_manager.set_debug_mode(not self.region_manager.show_debug)
         self.btn_debug.set_active(self.region_manager.show_debug)
         self.btn_debug.set_text(f"{'关闭' if self.region_manager.show_debug else '开启'}显示所有区域框")
 
-    def start_listeners(self):
-        self.keyboard_listener = keyboard.Listener(on_press=self.on_key_press, on_release=self.on_key_release)
-        self.keyboard_listener.start()
-        self.mouse_listener = mouse.Listener(on_click=self.on_mouse_click)
-        self.mouse_listener.start()
-        hotkey_mapping = {
-            self.hotkeys['toggle_display']: self.toggle_display,
-            self.hotkeys['measure_map']: self.largemap_radar.toggle_mode,
-            self.hotkeys['toggle_recoil']: self.toggle_recoil,
-            self.hotkeys['toggle_weapon_detection']: self.toggle_weapon_detection,
-        }
-        self.hotkey_listener = keyboard.GlobalHotKeys(hotkey_mapping)
-        self.hotkey_listener.start()
+    def restart_listeners(self):
+        """停止并重新启动所有监听器（应用新快捷键）"""
+        if hasattr(self, 'keyboard_listener') and self.keyboard_listener:
+            self.keyboard_listener.stop()
+        if hasattr(self, 'mouse_listener') and self.mouse_listener:
+            self.mouse_listener.stop()
+        if hasattr(self, 'hotkey_listener') and self.hotkey_listener:
+            self.hotkey_listener.stop()
+        self.start_listeners()
 
     def start_listeners(self):
         self.keyboard_listener = keyboard.Listener(on_press=self.on_key_press, on_release=self.on_key_release)
@@ -745,21 +692,16 @@ class TacticalHub:
         if key in (keyboard.Key.alt_l, keyboard.Key.alt_r):
             self.alt_pressed = True
 
-        equip_key = self.hotkeys['toggle_equipment']
-        equip_parts = equip_key.split('+')
-        equip_main = equip_parts[-1]   # 由于限制为单键，直接取最后一个部分
-        # 检查普通字符键
-        if hasattr(key, 'char') and key.char == equip_main:
-            self.root.after(0, self.equipment_detector.on_tab_press)
-            return
-        # 检查特殊键（如 tab, f1, space 等）
-        elif hasattr(key, 'name') and key.name == equip_main:
-            self.root.after(0, self.equipment_detector.on_tab_press)
-            return
+        throw_key = self.hotkeys['throw']
+        # 将组合键字符串解析成一组按键名和主键
+        parts = throw_key.split('+')
+        main_key = parts[-1]
 
-        # 手雷瞬爆
-        throw_key = self.hotkeys['throw'].split('+')[-1]
-        if hasattr(key, 'char') and key.char == throw_key:
+        # 检测当前按下的键是否匹配
+        current_mods = set()
+        if self.alt_pressed:
+            current_mods.add('<alt>')
+        if hasattr(key, 'char') and key.char == main_key:
             if self.display_enabled and self.current_weapon == "Grenade":
                 self.throwables.toggle_auto_throw()
 
@@ -768,27 +710,31 @@ class TacticalHub:
             self.alt_pressed = False
 
     def on_mouse_click(self, x, y, button, pressed):
-        # 左键+中键 地图点位助手
+        # 更新左键和中键状态
         if button == mouse.Button.left:
             self.left_pressed = pressed
         elif button == mouse.Button.middle:
             self.middle_pressed = pressed
 
+        # 左键 + 中键同时按下 -> 启用地图点位助手
         if self.left_pressed and self.middle_pressed:
-            if not self.map_assist.is_enabled:
+            if not self.map_assist.is_enabled:   # 避免重复启用
                 self.map_assist.set_enabled(True)
         else:
+            # 右键按下（且未按住 Alt）-> 关闭地图点位助手
             if button == mouse.Button.right and pressed:
                 if not self.alt_pressed:
                     if self.map_assist.is_enabled:
                         self.map_assist.set_enabled(False)
 
-        # 右键倍镜识别（压枪开启时）
-        # if button == mouse.Button.right and pressed and self.recoil_enabled:
-        #     if self.scope_update_after_id:
-        #         self.root.after_cancel(self.scope_update_after_id)
-        #     self.scope_update_after_id = self.root.after(self.scope_update_delay, self._update_scope_from_screenshot)
+        if button == mouse.Button.right and pressed and self.weapon_detection_enabled:
+            # 取消之前的延迟任务，避免重复执行
+            if self.scope_update_after_id:
+                self.root.after_cancel(self.scope_update_after_id)
+            # 启动延迟任务
+            self.scope_update_after_id = self.root.after(self.scope_update_delay, self._update_scope_from_screenshot)
 
+        # 传递给大地图测距模块
         self.largemap_radar.on_mouse_click(x, y, button, pressed)
 
     def save_hotkey_config(self):
@@ -819,8 +765,7 @@ class TacticalHub:
             "toggle_display": "<ctrl>+<shift>+<space>",
             "measure_map": "<ctrl>+<shift>+m",
             "toggle_recoil": "<ctrl>+<shift>+<tab>",
-            "toggle_weapon_detection": "<f2>",
-            "toggle_equipment": "tab"
+            "toggle_weapon_detection": "<f2>"
         }
         self.save_hotkey_config()
         # 刷新UI中的快捷键显示
@@ -838,9 +783,8 @@ class TacticalHub:
                 pass
 
     def on_closing(self):
-        self.equipment_detector.set_enabled(False)
-        self.weapon_detector.set_enabled(False)
-        self.gesture_id.set_enabled(False)
+        self._stop_detection = True
+        self.weapon_id.set_enabled(False)
         self.recoil.shutdown()
         if self.status_overlay:
             self.status_overlay.destroy()
