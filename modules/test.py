@@ -21,7 +21,7 @@ from crossbow_assistant import CrossbowAssistant
 from largemap_radar import AutoMapDistanceAssistant
 from weapon_identifier import WeaponIdentifier
 from scope_identifier import ScopeIdentifier
-from recoil_control import RecoilControlModule
+from modules.recoil_control_old import RecoilControlModule
 from gesture_identifier import GestureIdentifier
 
 

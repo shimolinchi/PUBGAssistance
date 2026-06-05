@@ -19,7 +19,7 @@ from modules.crossbow_assistant import CrossbowAssistant
 from modules.largemap_radar import AutoMapDistanceAssistant
 from modules.weapon_identifier import WeaponIdentifier
 from modules.scope_identifier import ScopeIdentifier
-from modules.recoil_control import RecoilControlModule
+from modules.recoil_control_old import RecoilControlModule
 from modules.gesture_identifier import GestureIdentifier
 
 class RoundedButton(tk.Canvas):
