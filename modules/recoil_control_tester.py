@@ -7,7 +7,7 @@ import threading
 import time
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from modules.recoil_control import RecoilControlModule
+from recoil_control import RecoilControlModule
 from pynput.mouse import Button
 
 class RecoilTester:

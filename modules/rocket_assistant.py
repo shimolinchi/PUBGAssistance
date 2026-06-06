@@ -74,6 +74,12 @@ class RocketAssistant:
 
         self.overlay.update_idletasks()
 
+        try:
+            hwnd = int(self.overlay.frame(), 16)
+            ctypes.windll.user32.SetWindowDisplayAffinity(hwnd, 17)
+        except Exception as e:
+            print(f"[火箭筒助手] 隐身 API 调用失败: {e}")
+
         # # 强制顶层样式（一次）
         # try:
         #     hwnd = int(self.overlay.frame(), 16)

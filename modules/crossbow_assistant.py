@@ -56,6 +56,12 @@ class CrossbowAssistant:
 
         self.overlay.update_idletasks()
 
+        try:
+            hwnd = int(self.overlay.frame(), 16)
+            ctypes.windll.user32.SetWindowDisplayAffinity(hwnd, 17)
+        except Exception as e:
+            print(f"[十字弩助手] 隐身 API 调用失败: {e}")
+
         # 一次性强制最高层（与火箭筒助手一致）
         # try:
         #     hwnd = int(self.overlay.frame(), 16)

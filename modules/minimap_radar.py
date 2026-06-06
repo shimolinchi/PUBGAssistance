@@ -67,6 +67,12 @@ class MinimapRadarModule:
 
         self.overlay.update_idletasks()
 
+        try:
+            hwnd = int(self.overlay.frame(), 16)
+            ctypes.windll.user32.SetWindowDisplayAffinity(hwnd, 17)
+        except Exception as e:
+            print(f"[小地图测距模块] 隐身 API 调用失败: {e}")
+
         # try:
         #     hwnd = int(self.overlay.frame(), 16)
 

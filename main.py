@@ -4,6 +4,7 @@ import mss
 from pynput import keyboard, mouse
 import threading
 import time
+import ctypes
 import json
 import os
 
@@ -92,17 +93,23 @@ class TacticalHub:
         self.throwables = ThrowablesAssistant(self.root, self.region_manager, self.minimap, self.elevation, fps=30, config_file=self.config_file)
         self.vss_assist = VssAssistant(self.root, self.region_manager, self.minimap, fps=30, config_file=self.config_file)
         self.crossbow_assist = CrossbowAssistant(self.root, self.region_manager, self.minimap, fps=30, config_file=self.config_file)
-        self.equipment_detector = EquipmentDetector(self.region_manager, fps=5, confirm_frames=2, idle_timeout=2.0, debug=False)
         self.weapon_detector = WeaponDetector(self.region_manager, fps=30, match_threshold=0.55)
         self.recoil = RecoilControlModuleNew(config_file=self.config_file)
         self.gesture_id = GestureIdentifier(region_manager=self.region_manager)
 
+        self.equipment_detector = EquipmentDetector(
+            self.region_manager, fps=20, idle_timeout=2.0, debug=False,
+            on_status_change=self.on_equipment_status   # 新增
+        )
+        # self.equipment_detector = EquipmentDetector(self.region_manager, fps=20, idle_timeout=2.0, debug=False)
+
         # 状态变量
-        self.weapon_detection_enabled = False
+        self.weapon_detection_enabled = True
         self.display_enabled = False
         self.recoil_enabled = False
         self.current_weapon = None
         self.current_gesture = None
+        self.equipment_status = "closed"
         self.current_weapons_attachments = {1: {}, 2: {}}   # 存储装备栏识别的两个武器配件
 
         self.left_pressed = False
@@ -156,9 +163,10 @@ class TacticalHub:
             self.update_status_display()
 
         # 设置回调
-        self.equipment_detector.set_enabled(False, on_equipment_update)
-        self.weapon_detector.set_enabled(False, on_weapon_detected)
-        self.gesture_id.set_enabled(False, on_gesture_identified)
+
+        self.equipment_detector.set_enabled(True, on_equipment_update)
+        self.weapon_detector.set_enabled(True, on_weapon_detected)
+        self.gesture_id.set_enabled(True, on_gesture_identified)
 
         # 快捷键配置
         self.hotkeys = {
@@ -193,6 +201,10 @@ class TacticalHub:
             # 防止在某些没有界面的无头环境或图标丢失时程序直接崩溃
             print(f"警告: 无法加载图标 - {e}")
 
+    def on_equipment_status(self, status):
+        self.equipment_status = status
+        self.update_status_display()
+
     def init_ui(self):
         self.notebook = ttk.Notebook(self.root)
         self.notebook.pack(fill="both", expand=True, padx=5, pady=5)
@@ -205,6 +217,8 @@ class TacticalHub:
         self.launch_tab = tk.Frame(self.notebook, bg="#F9FAFB")
         self.notebook.add(self.launch_tab, text="启动助手")
         self.build_launch_tab()
+        self.btn_weapon_detect.set_active(True)
+        self.btn_weapon_detect.set_text("关闭武器检测")
 
         self.calib_tab = tk.Frame(self.notebook, bg="#F9FAFB")
         self.notebook.add(self.calib_tab, text="校准区域")
@@ -225,11 +239,16 @@ class TacticalHub:
         self.status_overlay.attributes("-transparentcolor", "black")
         self.status_overlay.overrideredirect(True)
         x = 5
-        y = self.sh - 84
+        y = self.sh - 109   # 底部对齐
         self.status_overlay.geometry(f"450x120+{x}+{y}")
         self.status_canvas = tk.Canvas(self.status_overlay, bg="black", highlightthickness=0, width=450, height=120)
         self.status_canvas.pack()
-        self.status_overlay.withdraw()
+        try:
+            hwnd = int(self.status_overlay.frame(), 16)
+            ctypes.windll.user32.SetWindowDisplayAffinity(hwnd, 17)
+        except Exception as e:
+            print(f"[状态栏] 防截图 API 调用失败: {e}")
+            # self.status_overlay.withdraw()
 
     def set_status(self, status_text, status_type="info"):
         """设置状态栏文本和背景色
@@ -295,12 +314,14 @@ class TacticalHub:
         self.select_size(1)
 
     def build_launch_tab(self):
-        self.btn_weapon_detect = RoundedButton(self.launch_tab, 220, 45, 25, "开启武器检测", command=self.toggle_weapon_detection, is_toggle=True, text_size=12)
-        self.btn_weapon_detect.pack(pady=6)
-        self.btn_display = RoundedButton(self.launch_tab, 220, 45, 25, "开启瞄准辅助", command=self.toggle_display, is_toggle=True, text_size=12)
-        self.btn_display.pack(pady=6)
-        self.btn_recoil = RoundedButton(self.launch_tab, 220, 45, 25, "开启辅助压枪", command=self.toggle_recoil, is_toggle=True, text_size=12)
-        self.btn_recoil.pack(pady=6)
+        self.btn_weapon_detect = RoundedButton(self.launch_tab, 220, 35, 25, "开启武器检测", command=self.toggle_weapon_detection, is_toggle=True, text_size=12)
+        self.btn_weapon_detect.pack(pady=4)
+        self.btn_display = RoundedButton(self.launch_tab, 220, 35, 25, "开启瞄准辅助", command=self.toggle_display, is_toggle=True, text_size=12)
+        self.btn_display.pack(pady=4)
+        self.btn_recoil = RoundedButton(self.launch_tab, 220, 35, 25, "开启辅助压枪", command=self.toggle_recoil, is_toggle=True, text_size=12)
+        self.btn_recoil.pack(pady=4)
+        self.btn_reload_recoil = RoundedButton(self.launch_tab, 220, 35, 25, "重新加载压枪配置", command=self.reload_recoil_config, text_size=12, is_toggle=False)
+        self.btn_reload_recoil.pack(pady=4)
 
         tk.Label(self.launch_tab, text="--启用特殊武器助手--", bg="#F9FAFB", fg="#6B7280").pack(pady=5)
 
@@ -313,7 +334,7 @@ class TacticalHub:
         ]
         self.assistant_btns = {}
         frame = tk.Frame(self.launch_tab, bg="#F9FAFB")
-        frame.pack(pady=10) 
+        frame.pack(pady=6) 
         for i, (name, key) in enumerate(assistants):
             btn = RoundedButton(frame, 107, 30, 25, name, command=lambda k=key: self.toggle_assistant(k), is_toggle=True)
             btn.grid(row=i//2, column=i%2, padx=3, pady=5)
@@ -435,6 +456,9 @@ class TacticalHub:
                                     command=self.reset_default_hotkeys, is_toggle=False)
         default_btn.pack(side=tk.LEFT, padx=5)
         default_btn.pack(pady=1)
+    
+    def reload_recoil_config(self):
+        self.recoil.reload_config()
 
     def toggle_assistant(self, key):
         # 仅当显示层开启且当前武器匹配时才允许手动切换
@@ -566,10 +590,10 @@ class TacticalHub:
         self.update_status_display()
 
     def update_status_display(self):
-        if not self.weapon_detection_enabled:
-            if self.status_overlay:
-                self.status_overlay.withdraw()
-            return
+        # if not self.weapon_detection_enabled:
+        #     if self.status_overlay:
+        #         self.status_overlay.withdraw()
+        #     return
         if not self.status_overlay:
             return
 
@@ -579,17 +603,59 @@ class TacticalHub:
             "light": "轻握", "laser": "激光", "thumb": "拇指"
         }
         stock_map = {
-            "tactical": "战术", "heavy": "重型", "micro": "微托"
+            "tactical": "战术", "heavy": "重型", "uzi": "微托"
         }
         scope_map = {
-            "red_dot": "红点", "holographic": "全息", "x2": "二倍", "x3": "三倍",
-            "x4": "四倍", "x6": "六倍", "x8": "八倍", "multiple": "蛤蟆"
+            "red_dot": "红点", "holographic": "全息", "2": "二倍", "3": "三倍",
+            "4": "四倍", "6": "六倍", "8": "八倍", "multiple": "蛤蟆"
         }
         muzzle_map = {
             "rifle_compensator": "步枪补偿", "rifle_suppressor": "步枪消焰", "rifle_silencer": "步枪消音", "rifle_braker": "制退",
             "smg_compensator": "冲锋补偿", "smg_suppressor": "冲锋消焰", "smg_silencer": "冲锋消音",
         }
         gesture_map = {"stand": "站立", "squat": "蹲下", "lie": "趴下"}
+        status_map = {
+            "opened": ("武器识别中", "#2ECC71"),    # 绿
+            "closed": ("装备栏关闭", "#3498DB"),      # 蓝
+            "confirming": ("正在确认中", "#F39C12")     # 橙黄
+        }
+        status_text, status_color = status_map.get(self.equipment_status, ("装备栏关闭", "#3498DB"))
+
+        # 清空画布
+        self.status_canvas.delete("status_text")
+
+        # 第一行：装备栏状态（y=5）
+        # status_indicator = f"识别: {'ON' if self.weapon_detection_enabled else 'OFF'}  测距: {'ON' if self.display_enabled else 'OFF'}  压枪: {'ON' if self.recoil_enabled else 'OFF'}"
+
+        x_start = 10
+        y_offset = 5
+        # 识别
+        color_detect = "#2ECC71" if self.weapon_detection_enabled else "#E74C3C"
+        self.status_canvas.create_text(x_start, y_offset, anchor="nw", text="识别", fill=color_detect,
+                                    font=("Microsoft YaHei", 10, "bold"), tags="status_text")
+        
+        x_start += 35
+        # 测距
+        color_display = "#2ECC71" if self.display_enabled else "#E74C3C"
+        self.status_canvas.create_text(x_start, y_offset, anchor="nw", text="测距", fill=color_display,
+                                    font=("Microsoft YaHei", 10, "bold"), tags="status_text")
+        x_start += 35
+        # 压枪
+        if self.recoil_enabled:
+            if self.current_weapon is None:
+                color_recoil = "#F39C12"   # 黄色：没有武器但压枪开启
+            else:
+                color_recoil = "#2ECC71"   # 绿色：有武器且压枪开启
+        else:
+            color_recoil = "#E74C3C"       # 红色：压枪关闭
+        self.status_canvas.create_text(x_start, y_offset, anchor="nw", text="压枪", fill=color_recoil,
+                                    font=("Microsoft YaHei", 10, "bold"), tags="status_text")
+        
+        
+        x_start += 35
+        # 装备栏状态
+        self.status_canvas.create_text(x_start, y_offset, anchor="nw", text=status_text, fill=status_color,
+                                    font=("Microsoft YaHei", 10, "bold"), tags="status_text")
 
         w1 = self.current_weapons_attachments.get(1, {})
         w2 = self.current_weapons_attachments.get(2, {})
@@ -611,17 +677,16 @@ class TacticalHub:
                 parts.append(stock_map.get(stock, stock))
             return " | ".join(parts)
 
-        line1 = f"武器1: {format_weapon(w1)}"
-        line2 = f"武器2: {format_weapon(w2)}"
+        line2 = f"武器1: {format_weapon(w1)}"
+        line3 = f"武器2: {format_weapon(w2)}"
         curr = self.current_weapon if self.current_weapon else "无"
-        pose = gesture_map.get(self.current_gesture, "位置姿势") if self.current_gesture else "未知姿势"
-        line3 = f"当前: {curr} | 姿势: {pose}"
+        pose = gesture_map.get(self.current_gesture, "未知姿势") if self.current_gesture else "未知姿势"
+        line4 = f"当前: {curr} | 姿势: {pose}"
 
-        self.status_canvas.delete("status_text")
-        y_offset = 5
-        for line in [line1, line2, line3]:
+        y_offset += 25 
+        for line in [line2, line3, line4]:
             self.status_canvas.create_text(10, y_offset, anchor="nw", text=line, fill="white",
-                                        font=("Microsoft YaHei", 11, "bold"), tags="status_text")
+                                        font=("Microsoft YaHei", 10, "bold"), tags="status_text")
             y_offset += 25
         self.status_overlay.deiconify()
 

@@ -12,14 +12,14 @@ class EquipmentDetector:
     """
 
     def __init__(self, region_manager, templates_dir="templates/equipments",
-                 fps=10, confirm_frames=2, idle_timeout=2.0,
-                 thresholds: Dict[str, float] = None, debug=False):
+                 fps=15, idle_timeout=2.0,
+                 thresholds: Dict[str, float] = None, debug=False, on_status_change: Optional[Callable] = None):
         self.rm = region_manager
         self.templates_dir = templates_dir
         self.fps = fps
-        self.confirm_frames = confirm_frames
         self.idle_timeout = idle_timeout
         self.debug = debug
+        self.on_status_change = on_status_change
 
         # 默认阈值：武器名0.55，配件0.85
         self.thresholds = {
@@ -57,7 +57,7 @@ class EquipmentDetector:
                 "stock": None, "stock_score": 0.0}
         }
 
-    # ================= 模板加载 =================
+    # ================= 模板加载（不变） =================
     def _load_templates(self, category: str, region_name: str):
         category_path = os.path.join(self.templates_dir, category)
         if not os.path.exists(category_path):
@@ -92,7 +92,6 @@ class EquipmentDetector:
                     gray = cv2.cvtColor(cropped, cv2.COLOR_BGRA2GRAY)
                     self.templates[category][item_name].append(gray)
                 else:
-                    # 配件：保存 BGR 和掩码（alpha 通道）
                     if cropped.shape[2] == 4:
                         bgr = cropped[:, :, :3]
                         alpha = cropped[:, :, 3]
@@ -166,7 +165,6 @@ class EquipmentDetector:
                     best_loc = max_loc
                     best_tpl_item = item
         if best_score >= threshold and best_name is not None:
-            # 二次验证：计算掩码区域内的均方误差（MSE）
             x, y = best_loc
             h, w = best_tpl_item["bgr"].shape[:2]
             matched_region = roi_bgr[y:y+h, x:x+w]
@@ -177,16 +175,41 @@ class EquipmentDetector:
             if len(masked_diff) == 0:
                 return None, best_score
             mse = np.mean(masked_diff ** 2)
-            # MSE 阈值（可调整）
             if mse > 150:
                 if self.debug:
-                    # print(f"[装备栏] {best_name} 匹配得分 {best_score:.3f} 但 MSE={mse:.1f} 过高，丢弃")
                     pass
                 return None, best_score
-            # 已删除边缘位置检查，直接返回
             return best_name, best_score
         return None, best_score
 
+    # ================= 快速武器名检测（仅名称） =================
+    def _detect_weapon_name_only(self, weapon_slot: int):
+        """仅检测指定武器槽位的名称，不检测配件"""
+        slot_regions = {1: "weapon1_name_region", 2: "weapon2_name_region"}
+        name_region = slot_regions.get(weapon_slot)
+        if not name_region:
+            return None
+        name_rect = self.rm.get_real_region(name_region)
+        if not name_rect:
+            return None
+        with mss.mss() as sct:
+            img = sct.grab(name_rect)
+            img_bgr = cv2.cvtColor(np.array(img), cv2.COLOR_BGRA2BGR)
+            img_resized = self._resize_to_base(img_bgr, name_region)
+            if img_resized is None:
+                return None
+            name, score = self._match_item(img_resized, self.templates["names"], "names")
+            if name and score >= self.thresholds["names"]:
+                return name
+        return None
+
+    def _detect_both_weapon_names(self):
+        """快速检测两个武器槽位的名称，返回 (weapon1_name, weapon2_name)"""
+        w1 = self._detect_weapon_name_only(1)
+        w2 = self._detect_weapon_name_only(2)
+        return w1, w2
+
+    # ================= 完整武器检测（含配件） =================
     def _detect_weapon(self, weapon_slot: int):
         slot_regions = {
             1: ("weapon1_name_region", "weapon1_scope_region", "weapon1_grip_region",
@@ -219,7 +242,7 @@ class EquipmentDetector:
                 result["name"] = None
                 result["name_score"] = 0.0
 
-            # 配件（仅当武器名称存在时才识别，否则直接置None）
+            # 配件（仅当武器名称存在时才识别）
             for key, region_key, templates_key in [
                 ("scope", scope_region, "scopes"),
                 ("grip", grip_region, "grips"),
@@ -247,13 +270,13 @@ class EquipmentDetector:
                     result[f"{key}_score"] = 0.0
         return result
 
-    # ================= 主循环和接口（保持不变） =================
+    # ================= 主循环与接口 =================
     def _detection_loop(self):
         consecutive_empty = 0
         with mss.mss() as sct:
             while not self._stop and self._enabled:
                 if not self._active:
-                    time.sleep(0.1)
+                    time.sleep(1 / self.fps)
                     continue
 
                 new_weapons = {}
@@ -263,32 +286,47 @@ class EquipmentDetector:
                 has_any_name = any(w.get("name") is not None for w in new_weapons.values())
                 if not has_any_name:
                     consecutive_empty += 1
-                else:
-                    consecutive_empty = 0
-                    self._last_detected_time = time.time()
+                    # 连续 2 次无武器名，认为装备栏已关闭
+                    if consecutive_empty >= 2:
+                        self._active = False
+                        if self._callback:
+                            self._callback(False, self.current_weapons)   # 传递最后成功数据
+                        if self.on_status_change:
+                            self.on_status_change("closed")
+                        consecutive_empty = 0
+                    continue   # 无武器名时不更新数据
 
-                if consecutive_empty >= self.confirm_frames:
-                    self._active = False
-                    if self._callback:
-                        self._callback(False, self.current_weapons)
-                    continue
+                # 有武器名，重置计数并更新数据
+                consecutive_empty = 0
+                self._last_detected_time = time.time()
 
                 changed = False
                 for slot in [1, 2]:
                     cur = self.current_weapons[slot]
                     new = new_weapons[slot]
-                    for key in ["name", "scope", "grip", "muzzle", "stock"]:
-                        if cur.get(key) != new.get(key):
-                            cur[key] = new.get(key)
-                            cur[f"{key}_score"] = new.get(f"{key}_score", 0.0)
-                            changed = True
+                    # 更新武器名称（如果识别到）
+                    if new.get("name") is not None and new["name"] != cur.get("name"):
+                        cur["name"] = new["name"]
+                        cur["name_score"] = new["name_score"]
+                        changed = True
+                    # 更新配件：只有当武器名称存在且配件识别分数达到阈值时才更新
+                    for key in ["scope", "grip", "muzzle", "stock"]:
+                        if new.get(key) is not None and new.get(f"{key}_score", 0) >= self.thresholds.get(key+"s", 0.65):
+                            if cur.get(key) != new[key]:
+                                cur[key] = new[key]
+                                cur[f"{key}_score"] = new[f"{key}_score"]
+                                changed = True
+                        # 如果新识别中该配件为 None，但武器名存在，则保留原配件值（不置为 None）
                 if changed and self._callback:
                     self._callback(True, self.current_weapons)
 
+                # 空闲超时退出（保险）
                 if time.time() - self._last_detected_time > self.idle_timeout:
                     self._active = False
                     if self._callback:
                         self._callback(False, self.current_weapons)
+                    if self.on_status_change:
+                        self.on_status_change("closed")
                     continue
 
                 time.sleep(1.0 / self.fps)
@@ -311,34 +349,29 @@ class EquipmentDetector:
                 cv2.destroyAllWindows()
 
     def on_tab_press(self):
-        if not self._enabled:
-            return
+        if not self._enabled: return
         if self._active:
             self._active = False
-            if self._callback:
-                self._callback(False, self.current_weapons)
+            if self._callback: self._callback(False, self.current_weapons)
+            if self.on_status_change: self.on_status_change("closed")
         else:
-            detected = 0
-            for _ in range(self.confirm_frames):
-                any_name = False
-                for slot in [1, 2]:
-                    weapon = self._detect_weapon(slot)
-                    if weapon and weapon.get("name"):
-                        any_name = True
-                        break
-                if any_name:
-                    detected += 1
-                else:
-                    detected = 0
-                    break
-                time.sleep(0.05)
-            if detected >= self.confirm_frames:
+            if self.on_status_change: self.on_status_change("confirming")
+            success_count = 0
+            for _ in range(2):
+                w1, w2 = self._detect_both_weapon_names()
+                if w1 is not None:
+                    success_count += 1
+                if w2 is not None:
+                    success_count += 1
+            if success_count >= 2:  # 4次检测中至少2次成功
                 self._active = True
                 self._last_detected_time = time.time()
-                for slot in [1, 2]:
+                for slot in [1,2]:
                     self.current_weapons[slot] = self._detect_weapon(slot)
-                if self._callback:
-                    self._callback(True, self.current_weapons)
+                if self._callback: self._callback(True, self.current_weapons)
+                if self.on_status_change: self.on_status_change("opened")
+            else:
+                if self.on_status_change: self.on_status_change("closed")
 
     def get_current_weapons(self):
         return self.current_weapons

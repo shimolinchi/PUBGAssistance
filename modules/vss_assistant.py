@@ -81,6 +81,12 @@ class VssAssistant:
         # except Exception as e:
         #     print(f"[VSS助手] 窗口置顶/隐身 API 调用失败: {e}")
 
+        try:
+            hwnd = int(self.overlay.frame(), 16)
+            ctypes.windll.user32.SetWindowDisplayAffinity(hwnd, 17)
+        except Exception as e:
+            print(f"[VSS助手] 隐身 API 调用失败: {e}")
+
     def enable_module(self, enabled: bool):
         self.is_enabled = enabled
         self.tracker.enable_module(enabled)
