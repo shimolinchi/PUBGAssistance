@@ -8,10 +8,6 @@ from pynput import mouse, keyboard
 MOUSEEVENTF_MOVE = 0x0001
 
 class RecoilControlModule:
-    """
-    增强版压枪模块，支持倍镜、握把、枪口、枪托、姿势系数，动态压枪力度随时间线性增加
-    """
-
     def __init__(self, config_file="config.json"):
         self.config_file = config_file
 
@@ -21,25 +17,27 @@ class RecoilControlModule:
         self.fire_key_str = "end"
         self.fire_key = keyboard.Key.end
 
-        # 武器原始参数（未乘系数）
+        # 武器原始参数
         self.current_weapon = None
-        self.base_recoil = 0.0              # 基础力度（原始）
+        self.base_recoil = 0.0          # base 固定力度
         self.auto_fire_enabled = False
-        self.dynamic_increment = 0.0        # 动态增量（像素/秒，原始）
+        self.coeff_a = 0.0              # 线性系数
+        self.coeff_b = 0.0              # 额外增量渐近值
+        self.coeff_c = 0.0              # 半峰参数
 
         # 配件/姿势系数
-        self.total_multiplier = 1.0         # 所有系数的乘积（用于动态计算）
+        self.total_multiplier = 1.0
         self.scope = "hip"
         self.grip = None
         self.muzzle = None
         self.stock = None
         self.current_stance = "stand"
-        self.current_stance_multipliers = {"stand": 1.0, "squat": 0.8, "lie": 0.6}   # 临时默认
+        self.current_stance_multipliers = {"stand": 1.0, "squat": 0.8, "lie": 0.6}
 
         # 配置字典
         self.weapon_configs = {}
         self.weapon_type_map = {}
-        self.stance_multipliers = {}        # 嵌套字典 {"rifle": {...}, "lmg": {...}}
+        self.stance_multipliers = {}
         self.scope_multipliers = {}
         self.grip_multipliers = {}
         self.muzzle_multipliers = {}
@@ -47,10 +45,7 @@ class RecoilControlModule:
 
         self._load_config()
 
-        # 最终力度（用于外部查询）
         self.current_recoil_strength = 0
-
-        # 鼠标状态
         self.is_firing = False
         self.fire_start_time = 0
         self._thread_running = True
@@ -77,7 +72,7 @@ class RecoilControlModule:
                     self.recoil_delay = rc.get("recoil_delay", 0.02)
                     self.weapon_configs = rc.get("weapons", {})
                     self.weapon_type_map = rc.get("weapon_types", {})
-                    self.stance_multipliers = rc.get("stance_multipliers", {})     # 嵌套字典
+                    self.stance_multipliers = rc.get("stance_multipliers", {})
                     self.scope_multipliers = rc.get("scope_multipliers", {})
                     self.grip_multipliers = rc.get("grip_multipliers", {})
                     self.muzzle_multipliers = rc.get("muzzle_multipliers", {})
@@ -87,8 +82,10 @@ class RecoilControlModule:
 
     def _init_default_config(self):
         self.weapon_configs = {
-            "M416": {"base": 10.0, "auto_fire": False, "dynamic_increment_per_second": 6.0},
-            "AKM": {"base": 12.0, "auto_fire": False, "dynamic_increment_per_second": 8.0}
+            "M416": {"base": 10.0, "auto_fire": False,
+                     "coeff_a": 2.0, "coeff_b": 12.0, "coeff_c": 0.64},
+            "AKM": {"base": 12.0, "auto_fire": False,
+                    "coeff_a": 3.0, "coeff_b": 15.0, "coeff_c": 0.49}
         }
         self.weapon_type_map = {"M416": "rifle", "AKM": "rifle"}
         self.stance_multipliers = {
@@ -141,13 +138,18 @@ class RecoilControlModule:
         wp_data = self.weapon_configs.get(weapon_name, {})
         self.base_recoil = wp_data.get("base", 0.0)
         self.auto_fire_enabled = wp_data.get("auto_fire", False)
-        self.dynamic_increment = wp_data.get("dynamic_increment_per_second", 0.0)
+        self.coeff_a = wp_data.get("coeff_a", 0.0)
+        self.coeff_b = wp_data.get("coeff_b", 0.0)
+        self.coeff_c = wp_data.get("coeff_c", 0.0)
+        # 兼容旧配置：如果旧 dynamic_increment_per_second 存在，作为 coeff_a 使用
+        if self.coeff_a == 0 and self.coeff_b == 0 and self.coeff_c == 0:
+            old_inc = wp_data.get("dynamic_increment_per_second", 0.0)
+            if old_inc != 0:
+                self.coeff_a = old_inc
 
-        # 根据武器类型获取姿势系数表
         weapon_type = self.weapon_type_map.get(weapon_name, "rifle")
         self.current_stance_multipliers = self.stance_multipliers.get(weapon_type,
                                                                      {"stand": 1.0, "squat": 0.8, "lie": 0.6})
-        # 更新总系数
         self._recalculate_multiplier()
 
     def update_attachments(self, attachments: dict):
@@ -167,9 +169,9 @@ class RecoilControlModule:
             self._recalculate_multiplier()
 
     def _recalculate_multiplier(self):
-        """计算静态总系数（不含时间增量），用于动态压枪公式中的乘数"""
         if not self.current_weapon or self.base_recoil == 0:
             self.total_multiplier = 1.0
+            self.current_recoil_strength = 0
             return
 
         scope_mult = self.scope_multipliers.get(self.scope, 1.0)
@@ -179,9 +181,9 @@ class RecoilControlModule:
         stance_mult = self.current_stance_multipliers.get(self.current_stance, 1.0)
 
         self.total_multiplier = scope_mult * grip_mult * muzzle_mult * stock_mult * stance_mult
-        # 立即更新 current_recoil_strength 用于外部显示（静态部分，不含时间增量）
-        self.current_recoil_strength = int(round(self.base_recoil * self.total_multiplier))
-        print(f"[压枪静态] {self.current_weapon} | 姿势:{self.current_stance} | 倍镜:{self.scope} | 握把:{self.grip} | 枪口:{self.muzzle} | 枪托:{self.stock} -> 总系数: {self.total_multiplier:.3f}")
+        static_strength = self.base_recoil * self.total_multiplier
+        self.current_recoil_strength = int(round(static_strength))
+        print(f"[压枪静态] {self.current_weapon} | 姿势:{self.current_stance} | 倍镜:{self.scope} | 握把:{self.grip} | 枪口:{self.muzzle} | 枪托:{self.stock} -> 初始力度: {self.current_recoil_strength}px/tick")
 
     # ================= 事件处理 =================
     def _on_mouse_click(self, x, y, button, pressed):
@@ -198,25 +200,50 @@ class RecoilControlModule:
     def _recoil_worker_loop(self):
         while self._thread_running:
             if self.is_enabled and self.is_firing and self.current_weapon:
-                # 动态压枪力度 = (基础力度 + 时间×动态增量) × 总系数
-                elapsed = max(0, time.time() - self.fire_start_time)
-                raw_strength = self.base_recoil + elapsed * self.dynamic_increment
-                total = raw_strength * self.total_multiplier
+                t = max(0, time.time() - self.fire_start_time)
+                # 计算增量: a*t + (b*t²)/(c + t²)
+                t2 = t * t
+                if self.coeff_c != 0:
+                    inc = self.coeff_a * t + self.coeff_b * t2 / (self.coeff_c + t2)
+                else:
+                    inc = self.coeff_a * t + (self.coeff_b if t > 0 else 0.0)
+                total = (self.base_recoil + inc) * self.total_multiplier
                 strength = int(round(total))
-                self.current_recoil_strength = strength   # 实时更新供外部显示
+                self.current_recoil_strength = strength
 
-                # 连发模拟（自动武器）
                 if self.auto_fire_enabled:
                     self.kb.press(self.fire_key)
                     self.kb.release(self.fire_key)
 
-                # 压枪位移
                 if strength > 0:
                     ctypes.windll.user32.mouse_event(MOUSEEVENTF_MOVE, 0, strength, 0, 0)
+
+                print(f"[DEBUG] enabled={self.is_enabled}, firing={self.is_firing}, weapon={self.current_weapon}")
+                print(f"[DEBUG] base={self.base_recoil}, inc={inc}, total_mult={self.total_multiplier}, strength={strength}")
 
                 time.sleep(self.recoil_delay)
             else:
                 time.sleep(0.01)
+
+    def reload_config(self):
+        """重新从配置文件加载压枪参数，并更新当前武器的系数"""
+        self._load_config()
+        # 如果当前有武器，则重新应用该武器的配置
+        if self.current_weapon:
+            wp_data = self.weapon_configs.get(self.current_weapon, {})
+            self.base_recoil = wp_data.get("base", 0.0)
+            self.auto_fire_enabled = wp_data.get("auto_fire", False)
+            self.coeff_a = wp_data.get("coeff_a", 0.0)
+            self.coeff_b = wp_data.get("coeff_b", 0.0)
+            self.coeff_c = wp_data.get("coeff_c", 0.0)
+            # 兼容旧配置
+            if self.coeff_a == 0 and self.coeff_b == 0 and self.coeff_c == 0:
+                old_inc = wp_data.get("dynamic_increment_per_second", 0.0)
+                if old_inc != 0:
+                    self.coeff_a = old_inc
+            # 重新计算总系数
+            self._recalculate_multiplier()
+        print("[压枪模块] 配置已重新加载")  
 
     def shutdown(self):
         self._thread_running = False

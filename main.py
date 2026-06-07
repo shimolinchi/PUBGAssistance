@@ -93,13 +93,21 @@ class TacticalHub:
         self.throwables = ThrowablesAssistant(self.root, self.region_manager, self.minimap, self.elevation, fps=30, config_file=self.config_file)
         self.vss_assist = VssAssistant(self.root, self.region_manager, self.minimap, fps=30, config_file=self.config_file)
         self.crossbow_assist = CrossbowAssistant(self.root, self.region_manager, self.minimap, fps=30, config_file=self.config_file)
+        # self.weapon_detector = WeaponDetector(self.region_manager, fps=30, match_threshold=0.55)
+        # self.recoil = RecoilControlModuleNew(config_file=self.config_file)
+        # self.gesture_id = GestureIdentifier(region_manager=self.region_manager)
+
+        # self.equipment_detector = EquipmentDetector(
+        #     self.region_manager, fps=20, idle_timeout=2.0, debug=False,
+        #     on_status_change=self.on_equipment_status   # 新增
+        # )
+
         self.weapon_detector = WeaponDetector(self.region_manager, fps=30, match_threshold=0.55)
         self.recoil = RecoilControlModuleNew(config_file=self.config_file)
         self.gesture_id = GestureIdentifier(region_manager=self.region_manager)
-
         self.equipment_detector = EquipmentDetector(
             self.region_manager, fps=20, idle_timeout=2.0, debug=False,
-            on_status_change=self.on_equipment_status   # 新增
+            on_status_change=self.on_equipment_status
         )
         # self.equipment_detector = EquipmentDetector(self.region_manager, fps=20, idle_timeout=2.0, debug=False)
 
@@ -118,6 +126,8 @@ class TacticalHub:
         self._is_capturing = False
 
         # 状态覆盖层
+        self.assistant_btns = {}          # 关键！
+        self.status_var = tk.StringVar(value="就绪")
         self.status_overlay = None
         self.status_canvas = None
         self._init_status_overlay()
@@ -125,6 +135,11 @@ class TacticalHub:
         # 回调函数
         def on_equipment_update(is_open, weapons):
             if is_open:
+                self.weapon_slot_map = {}
+                for slot, data in weapons.items():
+                    name = data.get("name")
+                    if name:
+                        self.weapon_slot_map[name] = slot
                 self.current_weapons_attachments = weapons
                 w1 = weapons[1].get("name") if weapons[1] else None
                 w2 = weapons[2].get("name") if weapons[2] else None
@@ -140,10 +155,21 @@ class TacticalHub:
             self.update_status_display()   # 刷新状态栏
 
         def on_weapon_detected(weapon_name, score):
+
             if weapon_name and score >= 0.5:
                 self.current_weapon = weapon_name
                 if self.recoil_enabled and weapon_name not in ["Rocket", "Grenade", "VSS", "Crossbow"]:
                     self.recoil.update_current_weapon(weapon_name)
+                    # 获取当前武器的配件
+                    slot = self.weapon_slot_map.get(weapon_name)
+                    if slot:
+                        attachments = {}
+                        w = self.current_weapons_attachments.get(slot, {})
+                        attachments["scope"] = w.get("scope")
+                        attachments["grip"] = w.get("grip")
+                        attachments["muzzle"] = w.get("muzzle")
+                        attachments["stock"] = w.get("stock")
+                        self.recoil.update_attachments(attachments)
             else:
                 self.current_weapon = None
                 if self.recoil_enabled:
@@ -744,29 +770,25 @@ class TacticalHub:
         if self.recoil_enabled:
             if self.current_weapon and self.current_weapon not in ["Rocket", "Grenade", "VSS", "Crossbow"]:
                 self.recoil.update_current_weapon(self.current_weapon)
+                # 获取当前武器的配件
+                slot = self.weapon_slot_map.get(self.current_weapon)
+                if slot:
+                    attachments = {}
+                    w = self.current_weapons_attachments.get(slot, {})
+                    attachments["scope"] = w.get("scope")
+                    attachments["grip"] = w.get("grip")
+                    attachments["muzzle"] = w.get("muzzle")
+                    attachments["stock"] = w.get("stock")
+                    self.recoil.update_attachments(attachments)
             if self.current_gesture:
                 self.recoil.update_stance(self.current_gesture)
         else:
-            self.recoil.update_current_weapon(None)   # 关闭压枪时清除武器
+            self.recoil.update_current_weapon(None)
 
     def toggle_debug(self):
         self.region_manager.set_debug_mode(not self.region_manager.show_debug)
         self.btn_debug.set_active(self.region_manager.show_debug)
         self.btn_debug.set_text(f"{'关闭' if self.region_manager.show_debug else '开启'}显示所有区域框")
-
-    def start_listeners(self):
-        self.keyboard_listener = keyboard.Listener(on_press=self.on_key_press, on_release=self.on_key_release)
-        self.keyboard_listener.start()
-        self.mouse_listener = mouse.Listener(on_click=self.on_mouse_click)
-        self.mouse_listener.start()
-        hotkey_mapping = {
-            self.hotkeys['toggle_display']: self.toggle_display,
-            self.hotkeys['measure_map']: self.largemap_radar.toggle_mode,
-            self.hotkeys['toggle_recoil']: self.toggle_recoil,
-            self.hotkeys['toggle_weapon_detection']: self.toggle_weapon_detection,
-        }
-        self.hotkey_listener = keyboard.GlobalHotKeys(hotkey_mapping)
-        self.hotkey_listener.start()
 
     def start_listeners(self):
         self.keyboard_listener = keyboard.Listener(on_press=self.on_key_press, on_release=self.on_key_release)

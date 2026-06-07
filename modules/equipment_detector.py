@@ -175,7 +175,7 @@ class EquipmentDetector:
             if len(masked_diff) == 0:
                 return None, best_score
             mse = np.mean(masked_diff ** 2)
-            if mse > 150:
+            if mse > 250:
                 if self.debug:
                     pass
                 return None, best_score
@@ -220,7 +220,7 @@ class EquipmentDetector:
         name_region, scope_region, grip_region, muzzle_region, stock_region = slot_regions[weapon_slot]
 
         result = {}
-        with mss.mss() as sct:
+        with mss.MSS() as sct:
             # 名称
             name_rect = self.rm.get_real_region(name_region)
             if name_rect:
