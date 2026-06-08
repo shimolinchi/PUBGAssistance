@@ -232,8 +232,8 @@ class AutoMapDistanceAssistant:
         start_x = self.sw - mortar_total_width - 25
         x1 = start_x + (mortar_total_width - box_w) / 2
         y1 = self.sh * 0.465 - box_h - 15
-        self._draw_rounded_rect(x1, y1, x1+box_w, y1+box_h, radius=12, fill="#2980B9", outline="#34495E", width=2, tags="hud")
-        self.canvas.create_text(x1 + box_w/2, y1 + box_h/2, text="📍 请左键点击你的当前位置", fill="#FFFFFF", font=("Microsoft YaHei", 12, "bold"), tags="hud")
+        self._draw_rounded_rect(x1, y1, x1+box_w, y1+box_h, radius=12, fill="#2980B9", tags="hud")
+        self.canvas.create_text(x1 + box_w/2, y1 + box_h/2, text="请左键点击你的当前位置", fill="#FFFFFF", font=("Microsoft YaHei", 12, "bold"), tags="hud")
 
     def _update_calc_ui(self):
         self.canvas.delete("all")
@@ -242,8 +242,8 @@ class AutoMapDistanceAssistant:
         start_x = self.sw - mortar_total_width - 25
         x1 = start_x + (mortar_total_width - box_w) / 2
         y1 = self.sh * 0.465 - box_h - 15
-        self._draw_rounded_rect(x1, y1, x1+box_w, y1+box_h, radius=12, fill="#E67E22", outline="#34495E", width=2, tags="hud")
-        self.canvas.create_text(x1 + box_w/2, y1 + box_h/2, text="⚙️ 正在分析战术地图...", fill="#FFFFFF", font=("Microsoft YaHei", 12, "bold"), tags="hud")
+        self._draw_rounded_rect(x1, y1, x1+box_w, y1+box_h, radius=12, fill="#E67E22", tags="hud")
+        self.canvas.create_text(x1 + box_w/2, y1 + box_h/2, text="正在寻找目标...", fill="#FFFFFF", font=("Microsoft YaHei", 12, "bold"), tags="hud")
 
     def _render_auto_hud(self):
         self.canvas.delete("all")

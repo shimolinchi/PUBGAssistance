@@ -18,22 +18,13 @@ class RecoilTester:
         self.root.attributes("-topmost", True)
         self.root.configure(bg="#2C3E50")
 
-        # 创建压枪模块实例
         self.recoil = RecoilControlModule(config_file="config.json")
 
-        # 获取可用列表（如果配置为空则使用硬编码示例）
+        # 获取武器列表，并显示类型
         self.weapon_list = list(self.recoil.weapon_configs.keys())
-        if not self.weapon_list:
-            self.weapon_list = ["M416", "AKM", "SCAR-L", "M16A4"]
-            # 临时设置默认武器配置，方便测试
-            for w in self.weapon_list:
-                if w not in self.recoil.weapon_configs:
-                    self.recoil.weapon_configs[w] = {"base": 10.0, "auto_fire": False}
-            self.recoil.weapon_configs["M416"]["base"] = 10.0
-            self.recoil.weapon_configs["AKM"]["base"] = 12.0
-            self.recoil.weapon_configs["SCAR-L"]["base"] = 10.5
-            self.recoil.weapon_configs["M16A4"]["base"] = 11.0
-            self.recoil.weapon_configs["M16A4"]["auto_fire"] = True
+        self.weapon_type_map = {}
+        for w in self.weapon_list:
+            self.weapon_type_map[w] = self.recoil.weapon_configs[w].get("type", "ar")
 
         self.scope_list = list(self.recoil.scope_multipliers.keys()) or ["hip", "red_dot", "x3", "x4", "x6"]
         self.grip_list = list(self.recoil.grip_multipliers.keys()) or ["vertical", "half", "light"]
@@ -41,7 +32,6 @@ class RecoilTester:
         self.stock_list = list(self.recoil.stock_multipliers.keys()) or ["tactical"]
         self.stance_list = ["stand", "squat", "lie"]
 
-        # 当前选择变量
         self.weapon_var = tk.StringVar(value=self.weapon_list[0] if self.weapon_list else "")
         self.scope_var = tk.StringVar(value=self.scope_list[0] if self.scope_list else "hip")
         self.grip_var = tk.StringVar(value="无")
@@ -54,7 +44,6 @@ class RecoilTester:
         self.on_attachment_change()
 
     def init_ui(self):
-        # 标题
         tk.Label(self.root, text="压枪模块测试 (增强版)", fg="white", bg="#2C3E50",
                  font=("Microsoft YaHei", 14, "bold")).pack(pady=10)
 
@@ -65,34 +54,40 @@ class RecoilTester:
                                            selectcolor="#2C3E50", activebackground="#2C3E50")
         self.enable_check.pack(pady=5)
 
-        # 主武器选择
-        self._add_combo("武器", self.weapon_var, self.weapon_list, self.on_weapon_change)
+        # 主武器选择（显示类型）
+        frame_weapon = tk.Frame(self.root, bg="#2C3E50")
+        frame_weapon.pack(fill="x", padx=20, pady=5)
+        tk.Label(frame_weapon, text="武器:", width=8, anchor="w", bg="#2C3E50", fg="white").pack(side="left")
+        self.weapon_combo = ttk.Combobox(frame_weapon, textvariable=self.weapon_var, values=self.weapon_list, state="readonly")
+        self.weapon_combo.pack(side="left", fill="x", expand=True, padx=5)
+        self.weapon_combo.bind("<<ComboboxSelected>>", lambda e: self.on_weapon_change())
+        self.weapon_type_label = tk.Label(frame_weapon, text="", bg="#2C3E50", fg="#F39C12", font=("Arial", 9))
+        self.weapon_type_label.pack(side="left", padx=5)
 
-        # 配件选择
         self._add_combo("倍镜", self.scope_var, self.scope_list, self.on_attachment_change)
         self._add_combo("握把", self.grip_var, self.grip_list, self.on_attachment_change, include_none=True)
         self._add_combo("枪口", self.muzzle_var, self.muzzle_list, self.on_attachment_change, include_none=True)
         self._add_combo("枪托", self.stock_var, self.stock_list, self.on_attachment_change, include_none=True)
         self._add_combo("姿势", self.stance_var, self.stance_list, self.on_attachment_change)
 
-        # 当前力度显示
+        # 力度显示
         frame_strength = tk.LabelFrame(self.root, text="当前压枪力度 (像素/次)", bg="#34495E", fg="white", font=("Arial", 10, "bold"))
         frame_strength.pack(fill="x", padx=10, pady=10)
         self.strength_label = tk.Label(frame_strength, text="0", fg="#F1C40F", bg="#34495E",
                                        font=("Consolas", 28, "bold"))
         self.strength_label.pack(pady=10)
 
-        # 详细计算过程
+        # 详细计算
         frame_detail = tk.LabelFrame(self.root, text="计算详情", bg="#34495E", fg="white", font=("Arial", 10, "bold"))
         frame_detail.pack(fill="both", expand=True, padx=10, pady=5)
         self.detail_text = tk.Text(frame_detail, height=10, width=60, bg="#2C3E50", fg="#BDC3C7",
                                    font=("Consolas", 9))
         self.detail_text.pack(fill="both", expand=True, padx=5, pady=5)
 
-        # 模拟控制
+        # 控制按钮
         btn_frame = tk.Frame(self.root, bg="#2C3E50")
         btn_frame.pack(pady=10)
-        self.simulate_btn = tk.Button(btn_frame, text="模拟开火 (左键按下3秒)", command=self.simulate_fire,
+        self.simulate_btn = tk.Button(btn_frame, text="模拟开火 (侧键按下3秒)", command=self.simulate_fire,
                                       bg="#E67E22", fg="white", font=("Microsoft YaHei", 10))
         self.simulate_btn.pack(side="left", padx=5)
         self.stop_btn = tk.Button(btn_frame, text="停止模拟", command=self.simulate_stop,
@@ -119,35 +114,36 @@ class RecoilTester:
     def on_weapon_change(self):
         weapon = self.weapon_var.get()
         self.recoil.update_current_weapon(weapon)
+        wtype = self.weapon_type_map.get(weapon, "ar")
+        self.weapon_type_label.config(text=f"[{wtype.upper()}]")
         self.update_display()
 
     def on_attachment_change(self):
-        # 构建配件字典，忽略 "无"
         attachments = {}
+        
         scope = self.scope_var.get()
-        if scope != "hip" and scope != "无":
-            attachments["scope"] = scope
+        attachments["scope"] = scope if scope not in ["hip", "无"] else "hip"
+        
         grip = self.grip_var.get()
-        if grip and grip != "无":
-            attachments["grip"] = grip
+        attachments["grip"] = grip if grip != "无" else None
+        
         muzzle = self.muzzle_var.get()
-        if muzzle and muzzle != "无":
-            attachments["muzzle"] = muzzle
+        attachments["muzzle"] = muzzle if muzzle != "无" else None
+        
         stock = self.stock_var.get()
-        if stock and stock != "无":
-            attachments["stock"] = stock
+        attachments["stock"] = stock if stock != "无" else None
+
         self.recoil.update_attachments(attachments)
         stance = self.stance_var.get()
         self.recoil.update_stance(stance)
         self.update_display()
 
     def update_display(self):
-        # 更新力度显示
         self.strength_label.config(text=str(self.recoil.current_recoil_strength))
 
-        # 更新详细计算文本
         self.detail_text.delete(1.0, tk.END)
         weapon = self.recoil.current_weapon
+        wtype = self.weapon_type_map.get(weapon, "ar")
         base = self.recoil.base_recoil
         scope = self.recoil.scope
         scope_mult = self.recoil.scope_multipliers.get(scope, 1.0)
@@ -158,9 +154,9 @@ class RecoilTester:
         stock = self.recoil.stock
         stock_mult = self.recoil.stock_multipliers.get(stock, 1.0) if stock else 1.0
         stance = self.recoil.current_stance
-        stance_mult = self.recoil.stance_multipliers.get(stance, 1.0)
+        stance_mult = self.recoil.current_stance_multipliers.get(stance, 1.0)
 
-        self.detail_text.insert(tk.END, f"武器: {weapon}\n")
+        self.detail_text.insert(tk.END, f"武器: {weapon} (类型: {wtype.upper()})\n")
         self.detail_text.insert(tk.END, f"基础力度: {base:.2f}\n\n")
         self.detail_text.insert(tk.END, f"倍镜系数 ({scope}): {scope_mult:.3f}\n")
         self.detail_text.insert(tk.END, f"握把系数 ({grip}): {grip_mult:.3f}\n")
@@ -179,20 +175,20 @@ class RecoilTester:
             return
         self.simulating = True
         self.simulate_btn.config(state=tk.DISABLED)
-        # 模拟按下左键
-        self.recoil._on_mouse_click(0, 0, Button.left, True)
-        # 3秒后自动释放
-        self.simulate_timer = threading.Timer(3.0, self.simulate_stop)
-        self.simulate_timer.start()
+        # 这里默认你改回了用 Button.left 测试，如果你在模块里用的是 x1，请对应修改
+        self.recoil._on_mouse_click(0, 0, Button.left, True) 
+        
+        # 【修复点】使用 Tkinter 的 after 替代 threading.Timer，确保在 UI 线程内执行
+        self.simulate_timer = self.root.after(3000, self.simulate_stop)
 
     def simulate_stop(self):
         if not self.simulating:
             return
         if self.simulate_timer:
-            self.simulate_timer.cancel()
+            self.root.after_cancel(self.simulate_timer)
             self.simulate_timer = None
         self.simulating = False
-        # 释放左键
+        
         self.recoil._on_mouse_click(0, 0, Button.left, False)
         self.simulate_btn.config(state=tk.NORMAL)
 

@@ -53,16 +53,13 @@ POINT_CONFIG = {
 
 
 class MapPointAssistant:
-    """大地图静态点位助手 - 集成 RegionManager 版"""
+    """大地图静态点位助手 - 集成 RegionManager 版，不自带校准，统一由 RegionManager 管理区域"""
 
     def __init__(self, root, region_manager, config_file="config.json"):
         self.root = root
         self.region_manager = region_manager
         self.config_file = config_file
 
-        # 从 RegionManager 获取大地图区域
-        self.monitor = self.region_manager.get_real_region("largemap_region")
-        # 地图数据（从静态数据或 config 中的自定义数据合并，此处保留原 MAP_DATA）
         self.map_data = MAP_DATA
 
         self.is_enabled = False
@@ -70,12 +67,13 @@ class MapPointAssistant:
         self.active_categories = {"vehicles", "planes", "rooms", "bear_caves", "crowbar_rooms", "lab_camps", "safty_doors"}
         self.current_marker_size = "medium"
 
-        self.calib_state = "IDLE"      # IDLE / CALIB_1 / CALIB_2
-        self.calib_pt1 = None
-
         self.overlay = None
         self.canvas = None
         self._init_overlay()
+
+    def _get_monitor(self):
+        """获取当前实际的大地图区域（从 RegionManager 实时获取）"""
+        return self.region_manager.get_real_region("largemap_region")
 
     def _init_overlay(self):
         self.overlay = tk.Toplevel(self.root)
@@ -87,9 +85,6 @@ class MapPointAssistant:
         self.canvas = tk.Canvas(self.overlay, bg="black", highlightthickness=0)
         self.canvas.pack(fill=tk.BOTH, expand=True)
 
-        self.canvas.bind("<Button-1>", self._on_calib_left)
-        self.canvas.bind("<Button-3>", self._on_calib_right)
-
         self.overlay.update_idletasks()
 
         try:
@@ -97,25 +92,6 @@ class MapPointAssistant:
             ctypes.windll.user32.SetWindowDisplayAffinity(hwnd, 17)
         except Exception as e:
             print(f"[地图助手] 隐身 API 调用失败: {e}")
-
-        # 一次性强制置顶
-        # try:
-        #     hwnd = int(self.overlay.frame(), 16)
-        #     GWLP_EXSTYLE = -20
-        #     WS_EX_TOPMOST = 0x00000008
-        #     ex_style = ctypes.windll.user32.GetWindowLongW(hwnd, GWLP_EXSTYLE)
-        #     ctypes.windll.user32.SetWindowLongW(hwnd, GWLP_EXSTYLE, ex_style | WS_EX_TOPMOST)
-
-        #     HWND_TOPMOST = -1
-        #     SWP_NOMOVE = 0x0002
-        #     SWP_NOSIZE = 0x0001
-        #     ctypes.windll.user32.SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE)
-
-        #     ctypes.windll.user32.SetForegroundWindow(hwnd)
-        #     ctypes.windll.user32.BringWindowToTop(hwnd)
-        #     ctypes.windll.user32.SetWindowDisplayAffinity(hwnd, 17)
-        # except Exception as e:
-        #     print(f"[地图助手] 窗口置顶失败: {e}")
 
     # ================= 公共 API =================
     def set_enabled(self, enabled: bool):
@@ -131,71 +107,17 @@ class MapPointAssistant:
         self._render_points()
 
     def trigger_calibration(self):
-        """开始校准大地图区域（正方形框选）"""
-        self.calib_state = "CALIB_1"
-        # 临时取消透明色和设置半透明便于框选
-        self.overlay.attributes("-transparentcolor", "")
-        self.overlay.attributes("-alpha", 0.4)
-        self.canvas.config(bg="#111111", cursor="crosshair")
-        self.canvas.delete("all")
-        self.calib_pt1 = None
-
-    def cancel_calibration(self):
-        """取消校准"""
-        if self.calib_state != "IDLE":
-            self._exit_calibration()
-
-    # ================= 校准回调 =================
-    def _on_calib_left(self, event):
-        if self.calib_state == "CALIB_1":
-            self.calib_pt1 = (event.x, event.y)
-            self.calib_state = "CALIB_2"
-            self.canvas.create_oval(event.x - 3, event.y - 3, event.x + 3, event.y + 3, fill="red", tags="temp_calib")
-        elif self.calib_state == "CALIB_2":
-            x1, y1 = self.calib_pt1
-            x2, y2 = event.x, event.y
-            cx = (x1 + x2) // 2
-            cy = (y1 + y2) // 2
-            side = max(abs(x2 - x1), abs(y2 - y1))
-            if side < 10:
-                return
-            # 构造正方形区域
-            left = cx - side // 2
-            top = cy - side // 2
-            self.monitor = {"left": left, "top": top, "width": side, "height": side}
-
-            # 更新 RegionManager 中的 largemap_region
-            base_x = int(round(left / self.region_manager.scale_x))
-            base_y = int(round(top / self.region_manager.scale_y))
-            base_side = int(round(side / ((self.region_manager.scale_x + self.region_manager.scale_y) / 2)))
-            # 注意：RegionManager 中的 base_regions 存储的是基于基准分辨率（1920x1080）的坐标
-            # 我们直接更新 real_regions 并同步保存到配置文件
-            self.region_manager.real_regions["largemap_region"] = {
-                "left": left, "top": top, "width": side, "height": side
-            }
-            self.region_manager.base_regions["largemap_region"] = {
-                "left": base_x, "top": base_y, "width": base_side, "height": base_side
-            }
-            self.region_manager._save_config()
-
-            self._exit_calibration()
-            self._render_points()
-
-    def _on_calib_right(self, event):
-        if self.calib_state != "IDLE":
-            self._exit_calibration()
-
-    def _exit_calibration(self):
-        self.calib_state = "IDLE"
-        self.overlay.attributes("-alpha", 1.0)
-        self.overlay.attributes("-transparentcolor", "black")
-        self.canvas.config(bg="black", cursor="arrow")
-        self.canvas.delete("temp_calib")
+        """调用 RegionManager 进行大地图区域校准（统一校准入口）"""
+        self.region_manager.calibrate_region("largemap_region")
 
     # ================= 点位渲染 =================
     def _render_points(self):
         self.canvas.delete("map_point")
-        if not self.is_enabled or not self.monitor:
+        if not self.is_enabled:
+            return
+
+        monitor = self._get_monitor()
+        if not monitor:
             return
 
         # 获取当前地图数据
@@ -204,9 +126,9 @@ class MapPointAssistant:
             return
 
         # 计算地图中心与半边长
-        cx = self.monitor["left"] + self.monitor["width"] / 2
-        cy = self.monitor["top"] + self.monitor["height"] / 2
-        half_side = self.monitor["width"] / 2
+        cx = monitor["left"] + monitor["width"] / 2
+        cy = monitor["top"] + monitor["height"] / 2
+        half_side = monitor["width"] / 2
 
         # 根据当前标记大小配置半径和样式
         if self.current_marker_size == "small":

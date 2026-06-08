@@ -63,6 +63,7 @@ class RegionManagerTester:
             ("🎯 准星区域 (crosshair_region)", "crosshair_region"),
             # === 武器1区域 ===
             ("🔫 武器1 名称区域 (weapon1_name_region)", "weapon1_name_region"),
+            ("🔢 武器1 编号区域 (weapon1_number_region)", "weapon1_number_region"),
             ("🔍 武器1 倍镜区域 (weapon1_scope_region)", "weapon1_scope_region"),
             ("✊ 武器1 握把区域 (weapon1_grip_region)", "weapon1_grip_region"),
             ("🔫 武器1 枪口区域 (weapon1_muzzle_region)", "weapon1_muzzle_region"),
@@ -70,6 +71,7 @@ class RegionManagerTester:
 
             # === 武器2区域 ===
             ("🔫 武器2 名称区域 (weapon2_name_region)", "weapon2_name_region"),
+            ("🔢 武器2 编号区域 (weapon2_number_region)", "weapon2_number_region"),
             ("🔍 武器2 倍镜区域 (weapon2_scope_region)", "weapon2_scope_region"),
             ("✊ 武器2 握把区域 (weapon2_grip_region)", "weapon2_grip_region"),
             ("🔫 武器2 枪口区域 (weapon2_muzzle_region)", "weapon2_muzzle_region"),

@@ -108,8 +108,8 @@ class VssAssistant:
 
         if not is_found:
             warn_y = self.sh * 0.75
-            self.canvas.create_text(self.sw/2, warn_y, text="[ 未检测到 VSS 准星，测距图层已隐藏 ]",
-                                    fill="#E74C3C", font=("Microsoft YaHei", 12, "bold"), tags="vss_hud")
+            self.canvas.create_text(self.sw/2, warn_y, text="未检测到 VSS 准星",
+                                    fill="#E74C3C", font=("Microsoft YaHei", 15, "bold"), tags="vss_hud")
             return
 
         h_line_width = 30

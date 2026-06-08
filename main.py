@@ -93,20 +93,12 @@ class TacticalHub:
         self.throwables = ThrowablesAssistant(self.root, self.region_manager, self.minimap, self.elevation, fps=30, config_file=self.config_file)
         self.vss_assist = VssAssistant(self.root, self.region_manager, self.minimap, fps=30, config_file=self.config_file)
         self.crossbow_assist = CrossbowAssistant(self.root, self.region_manager, self.minimap, fps=30, config_file=self.config_file)
-        # self.weapon_detector = WeaponDetector(self.region_manager, fps=30, match_threshold=0.55)
-        # self.recoil = RecoilControlModuleNew(config_file=self.config_file)
-        # self.gesture_id = GestureIdentifier(region_manager=self.region_manager)
-
-        # self.equipment_detector = EquipmentDetector(
-        #     self.region_manager, fps=20, idle_timeout=2.0, debug=False,
-        #     on_status_change=self.on_equipment_status   # 新增
-        # )
 
         self.weapon_detector = WeaponDetector(self.region_manager, fps=30, match_threshold=0.55)
         self.recoil = RecoilControlModuleNew(config_file=self.config_file)
         self.gesture_id = GestureIdentifier(region_manager=self.region_manager)
         self.equipment_detector = EquipmentDetector(
-            self.region_manager, fps=20, idle_timeout=2.0, debug=False,
+            self.region_manager, fps=30, idle_timeout=10.0, debug=False,
             on_status_change=self.on_equipment_status
         )
         # self.equipment_detector = EquipmentDetector(self.region_manager, fps=20, idle_timeout=2.0, debug=False)
@@ -134,6 +126,7 @@ class TacticalHub:
 
         # 回调函数
         def on_equipment_update(is_open, weapons):
+            # print(f"[回调] is_open={is_open}, weapons1={weapons[1]}, weapons2={weapons[2]}")
             if is_open:
                 self.weapon_slot_map = {}
                 for slot, data in weapons.items():
@@ -224,7 +217,6 @@ class TacticalHub:
         try:
             self.root.iconbitmap(icon_path)
         except Exception as e:
-            # 防止在某些没有界面的无头环境或图标丢失时程序直接崩溃
             print(f"警告: 无法加载图标 - {e}")
 
     def on_equipment_status(self, status):
@@ -265,7 +257,7 @@ class TacticalHub:
         self.status_overlay.attributes("-transparentcolor", "black")
         self.status_overlay.overrideredirect(True)
         x = 5
-        y = self.sh - 109   # 底部对齐
+        y = self.sh - 240   # 底部对齐
         self.status_overlay.geometry(f"450x120+{x}+{y}")
         self.status_canvas = tk.Canvas(self.status_overlay, bg="black", highlightthickness=0, width=450, height=120)
         self.status_canvas.pack()
@@ -368,9 +360,9 @@ class TacticalHub:
 
 
     def build_calib_tab(self):
-        # 第0行：调试按钮（占两列）
-        self.btn_debug = RoundedButton(self.calib_tab, 220, 32, 25, "显示所有区域框", command=self.toggle_debug, is_toggle=True)
-        self.btn_debug.grid(row=0, column=0, columnspan=2, pady=5)
+        
+        self.btn_debug = RoundedButton(self.calib_tab, 220, 30, 25, "显示所有识别区域框", command=self.toggle_debug, is_toggle=True)
+        self.btn_debug.grid(row=0, column=0, columnspan=2, pady=2)
 
         # 原有六个区域按钮列表（名称和区域键）
         existing_items = [
@@ -387,26 +379,28 @@ class TacticalHub:
             # 左列按钮
             name1, key1 = existing_items[i]
             if key1 == "largemap_1km_px":
-                btn1 = RoundedButton(self.calib_tab, 107, 30, 25, f"校准{name1}",
+                btn1 = RoundedButton(self.calib_tab, 107, 28, 25, f"校准{name1}",
                                     command=lambda: self.region_manager.calibrate_scale("largemap_1km_px"))
             else:
-                btn1 = RoundedButton(self.calib_tab, 107, 30, 25, f"校准{name1}",
+                btn1 = RoundedButton(self.calib_tab, 107, 28, 25, f"校准{name1}",
                                     command=lambda k=key1: self.region_manager.calibrate_region(k))
-            btn1.grid(row=row, column=0, padx=5, pady=3, sticky="ew")
+            btn1.grid(row=row, column=0, padx=5, pady=2, sticky="ew")
 
             # 右列按钮
             if i+1 < len(existing_items):
                 name2, key2 = existing_items[i+1]
                 if key2 == "largemap_1km_px":
-                    btn2 = RoundedButton(self.calib_tab, 107, 30, 25, f"校准{name2}",
+                    btn2 = RoundedButton(self.calib_tab, 107, 28, 25, f"校准{name2}",
                                         command=lambda: self.region_manager.calibrate_scale("largemap_1km_px"))
                 else:
-                    btn2 = RoundedButton(self.calib_tab, 107, 30, 25, f"校准{name2}",
+                    btn2 = RoundedButton(self.calib_tab, 107, 28, 25, f"校准{name2}",
                                         command=lambda k=key2: self.region_manager.calibrate_region(k))
-                btn2.grid(row=row, column=1, padx=5, pady=3, sticky="ew")
+                btn2.grid(row=row, column=1, padx=5, pady=2, sticky="ew")
             row += 1
 
+        # 武器1 和 武器2 的项（每个武器6项）
         weapon1_items = [
+            ("武器1编号", "weapon1_number_region"),
             ("武器1名称", "weapon1_name_region"),
             ("武器1倍镜", "weapon1_scope_region"),
             ("武器1握把", "weapon1_grip_region"),
@@ -414,6 +408,7 @@ class TacticalHub:
             ("武器1枪托", "weapon1_stock_region"),
         ]
         weapon2_items = [
+            ("武器2编号", "weapon2_number_region"),
             ("武器2名称", "weapon2_name_region"),
             ("武器2倍镜", "weapon2_scope_region"),
             ("武器2握把", "weapon2_grip_region"),
@@ -421,17 +416,17 @@ class TacticalHub:
             ("武器2枪托", "weapon2_stock_region"),
         ]
 
-        for i in range(5):
+        for i in range(6):
             # 武器1按钮
             name1, key1 = weapon1_items[i]
-            btn1 = RoundedButton(self.calib_tab, 107, 30, 25, f"校准{name1}",
+            btn1 = RoundedButton(self.calib_tab, 107, 28, 25, f"校准{name1}",
                                 command=lambda k=key1: self.region_manager.calibrate_region(k))
-            btn1.grid(row=row, column=0, padx=5, pady=3, sticky="ew")
+            btn1.grid(row=row, column=0, padx=5, pady=2, sticky="ew")
             # 武器2按钮
             name2, key2 = weapon2_items[i]
-            btn2 = RoundedButton(self.calib_tab, 107, 30, 25, f"校准{name2}",
+            btn2 = RoundedButton(self.calib_tab, 107, 28, 25, f"校准{name2}",
                                 command=lambda k=key2: self.region_manager.calibrate_region(k))
-            btn2.grid(row=row, column=1, padx=5, pady=3, sticky="ew")
+            btn2.grid(row=row, column=1, padx=5, pady=2, sticky="ew")
             row += 1
             
     def build_key_tab(self):
@@ -616,10 +611,6 @@ class TacticalHub:
         self.update_status_display()
 
     def update_status_display(self):
-        # if not self.weapon_detection_enabled:
-        #     if self.status_overlay:
-        #         self.status_overlay.withdraw()
-        #     return
         if not self.status_overlay:
             return
 
@@ -629,14 +620,15 @@ class TacticalHub:
             "light": "轻握", "laser": "激光", "thumb": "拇指"
         }
         stock_map = {
-            "tactical": "战术", "heavy": "重型", "uzi": "微托"
+            "tactical": "战术", "heavy": "重型", "uzi": "微托", "cheek_pad": "托腮板"
         }
         scope_map = {
             "red_dot": "红点", "holographic": "全息", "2": "二倍", "3": "三倍",
             "4": "四倍", "6": "六倍", "8": "八倍", "multiple": "蛤蟆"
         }
         muzzle_map = {
-            "rifle_compensator": "步枪补偿", "rifle_suppressor": "步枪消焰", "rifle_silencer": "步枪消音", "rifle_braker": "制退",
+            "ar_dmr_compensator": "步枪补偿", "ar_dmr_suppressor": "步枪消焰", "ar_dmr_silencer": "步枪消音", "ar_dmr_braker": "制退",
+            "dmr_sr_compensator": "狙补偿", "dmr_sr_suppressor": "狙消焰", "dmr_sr_silencer": "狙消音",
             "smg_compensator": "冲锋补偿", "smg_suppressor": "冲锋消焰", "smg_silencer": "冲锋消音",
         }
         gesture_map = {"stand": "站立", "squat": "蹲下", "lie": "趴下"}
@@ -649,9 +641,6 @@ class TacticalHub:
 
         # 清空画布
         self.status_canvas.delete("status_text")
-
-        # 第一行：装备栏状态（y=5）
-        # status_indicator = f"识别: {'ON' if self.weapon_detection_enabled else 'OFF'}  测距: {'ON' if self.display_enabled else 'OFF'}  压枪: {'ON' if self.recoil_enabled else 'OFF'}"
 
         x_start = 10
         y_offset = 5
@@ -676,7 +665,6 @@ class TacticalHub:
             color_recoil = "#E74C3C"       # 红色：压枪关闭
         self.status_canvas.create_text(x_start, y_offset, anchor="nw", text="压枪", fill=color_recoil,
                                     font=("Microsoft YaHei", 10, "bold"), tags="status_text")
-        
         
         x_start += 35
         # 装备栏状态
@@ -841,6 +829,9 @@ class TacticalHub:
         if hasattr(key, 'char') and key.char == throw_key:
             if self.display_enabled and self.current_weapon == "Grenade":
                 self.throwables.toggle_auto_throw()
+        if hasattr(key, 'char') and key.char and key.char.lower() == 'n':
+            self.toggle_display()
+            return
 
     def on_key_release(self, key):
         if key in (keyboard.Key.alt_l, keyboard.Key.alt_r):

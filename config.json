@@ -410,9 +410,9 @@
             "height": 459
         },
         "largemap_region": {
-            "left": 288,
+            "left": 420,
             "top": 0,
-            "width": 1287,
+            "width": 1079,
             "height": 1079
         },
         "elevation_region": {
@@ -439,29 +439,35 @@
             "width": 237,
             "height": 36
         },
+        "weapon1_number_region": {
+            "left": 1333,
+            "top": 93,
+            "width": 33,
+            "height": 33
+        },
         "weapon1_scope_region": {
             "left": 1605,
             "top": 114,
-            "width": 51,
+            "width": 50,
             "height": 50
         },
         "weapon1_grip_region": {
-            "left": 1435,
-            "top": 235,
-            "width": 51,
-            "height": 52
+            "left": 1436,
+            "top": 236,
+            "width": 50,
+            "height": 50
         },
         "weapon1_muzzle_region": {
-            "left": 1332,
-            "top": 235,
-            "width": 52,
-            "height": 52
+            "left": 1334,
+            "top": 236,
+            "width": 50,
+            "height": 50
         },
         "weapon1_stock_region": {
-            "left": 1757,
+            "left": 1758,
             "top": 236,
-            "width": 51,
-            "height": 51
+            "width": 50,
+            "height": 50
         },
         "weapon2_name_region": {
             "left": 1369,
@@ -469,29 +475,35 @@
             "width": 238,
             "height": 38
         },
+        "weapon2_number_region": {
+            "left": 1333,
+            "top": 319,
+            "width": 33,
+            "height": 33
+        },
         "weapon2_scope_region": {
-            "left": 1604,
-            "top": 339,
-            "width": 52,
-            "height": 53
+            "left": 1605,
+            "top": 340,
+            "width": 50,
+            "height": 50
         },
         "weapon2_grip_region": {
-            "left": 1434,
-            "top": 460,
-            "width": 52,
-            "height": 53
+            "left": 1436,
+            "top": 462,
+            "width": 50,
+            "height": 50
         },
         "weapon2_muzzle_region": {
-            "left": 1332,
-            "top": 461,
-            "width": 52,
-            "height": 53
+            "left": 1334,
+            "top": 462,
+            "width": 50,
+            "height": 50
         },
         "weapon2_stock_region": {
-            "left": 1756,
-            "top": 461,
-            "width": 52,
-            "height": 53
+            "left": 1757,
+            "top": 462,
+            "width": 50,
+            "height": 50
         }
     },
     "map_scales": {
@@ -505,6 +517,7 @@
             "M416": {
                 "base": 9.6,
                 "auto_fire": false,
+                "type": "ar",
                 "coeff_a": -2.0,
                 "coeff_b": 14.2,
                 "coeff_c": 1.0
@@ -512,6 +525,7 @@
             "AKM": {
                 "base": 10.3,
                 "auto_fire": false,
+                "type": "ar",
                 "coeff_a": -2.0,
                 "coeff_b": 14.2,
                 "coeff_c": 1.0
@@ -519,6 +533,7 @@
             "SCARL": {
                 "base": 12.0,
                 "auto_fire": false,
+                "type": "ar",
                 "coeff_a": -2.0,
                 "coeff_b": 14.2,
                 "coeff_c": 1.0
@@ -526,13 +541,15 @@
             "AUG": {
                 "base": 8.9,
                 "auto_fire": false,
+                "type": "ar",
                 "coeff_a": -2.0,
                 "coeff_b": 18.0,
                 "coeff_c": 0.9
             },
             "K2": {
-                "base": 11.0,
+                "base": 9.0,
                 "auto_fire": false,
+                "type": "ar",
                 "coeff_a": -2.0,
                 "coeff_b": 14.2,
                 "coeff_c": 1.0
@@ -540,6 +557,7 @@
             "ACE32": {
                 "base": 9.2,
                 "auto_fire": false,
+                "type": "ar",
                 "coeff_a": -1.5,
                 "coeff_b": 14.7,
                 "coeff_c": 1.0
@@ -547,27 +565,31 @@
             "M762": {
                 "base": 12.0,
                 "auto_fire": false,
+                "type": "ar",
                 "coeff_a": -2.2,
                 "coeff_b": 19.1,
                 "coeff_c": 0.9
             },
             "Groza": {
-                "base": 13.0,
+                "base": 9.0,
                 "auto_fire": false,
-                "coeff_a": -2.0,
+                "type": "ar",
+                "coeff_a": -2.2,
                 "coeff_b": 14.2,
                 "coeff_c": 1.0
             },
             "Famas": {
-                "base": 12.0,
+                "base": 9.0,
                 "auto_fire": false,
+                "type": "ar",
                 "coeff_a": -2.0,
                 "coeff_b": 14.2,
-                "coeff_c": 1.0
+                "coeff_c": 0.8
             },
             "M16A4": {
                 "base": 11.0,
                 "auto_fire": true,
+                "type": "ar",
                 "coeff_a": -2.0,
                 "coeff_b": 14.2,
                 "coeff_c": 1.0
@@ -575,13 +597,15 @@
             "MK47": {
                 "base": 8.0,
                 "auto_fire": true,
-                "coeff_a": -2.05,
-                "coeff_b": 15.1,
-                "coeff_c": 0.7
+                "type": "ar",
+                "coeff_a": -3.2,
+                "coeff_b": 17.3,
+                "coeff_c": 0.55
             },
             "Tommy": {
                 "base": 7.0,
                 "auto_fire": false,
+                "type": "smg",
                 "coeff_a": -2.0,
                 "coeff_b": 14.2,
                 "coeff_c": 1.0
@@ -589,27 +613,31 @@
             "UMP": {
                 "base": 7.0,
                 "auto_fire": false,
+                "type": "smg",
                 "coeff_a": -2.0,
                 "coeff_b": 14.2,
                 "coeff_c": 1.0
             },
             "UZI": {
-                "base": 9.0,
+                "base": 5.0,
                 "auto_fire": false,
-                "coeff_a": -2.0,
-                "coeff_b": 14.2,
-                "coeff_c": 1.0
+                "type": "smg",
+                "coeff_a": -1.5,
+                "coeff_b": 23.7,
+                "coeff_c": 0.7
             },
             "P90": {
-                "base": 4.0,
+                "base": 6.4,
                 "auto_fire": false,
-                "coeff_a": -2.0,
-                "coeff_b": 14.2,
-                "coeff_c": 1.0
+                "type": "smg",
+                "coeff_a": -2.15,
+                "coeff_b": 4.0,
+                "coeff_c": 0.05
             },
             "MP5K": {
                 "base": 7.8,
                 "auto_fire": false,
+                "type": "smg",
                 "coeff_a": -2.5,
                 "coeff_b": 15.0,
                 "coeff_c": 0.6
@@ -617,6 +645,7 @@
             "Vector": {
                 "base": 8.5,
                 "auto_fire": false,
+                "type": "smg",
                 "coeff_a": -2.3,
                 "coeff_b": 19.5,
                 "coeff_c": 0.6
@@ -624,6 +653,7 @@
             "MP9": {
                 "base": 9.0,
                 "auto_fire": false,
+                "type": "smg",
                 "coeff_a": -2.0,
                 "coeff_b": 14.2,
                 "coeff_c": 1.0
@@ -631,29 +661,76 @@
             "JS9": {
                 "base": 9.0,
                 "auto_fire": false,
+                "type": "smg",
                 "coeff_a": -2.0,
                 "coeff_b": 14.2,
                 "coeff_c": 1.0
             },
             "MG3": {
-                "base": 8.0,
+                "base": 4.2,
                 "auto_fire": false,
-                "coeff_a": -2.0,
-                "coeff_b": 14.2,
-                "coeff_c": 1.0
+                "type": "lmg",
+                "coeff_a": -0.7,
+                "coeff_b": 4.2,
+                "coeff_c": 0.1
             },
             "M249": {
+                "base": 6.5,
+                "auto_fire": false,
+                "type": "lmg",
+                "coeff_a": -0.5,
+                "coeff_b": 4.0,
+                "coeff_c": 0.2
+            },
+            "O12": {
                 "base": 9.0,
                 "auto_fire": false,
-                "coeff_a": -2.0,
+                "type": "ar",
+                "coeff_a": -6.4,
                 "coeff_b": 14.2,
-                "coeff_c": 1.0
+                "coeff_c": 0.5
+            },
+            "SLR": {
+                "base": 15.0,
+                "auto_fire": false,
+                "type": "dmr"
+            },
+            "Mini14": {
+                "base": 14.0,
+                "auto_fire": false,
+                "type": "dmr"
+            },
+            "MK12": {
+                "base": 14.0,
+                "auto_fire": false,
+                "type": "dmr"
+            },
+            "MK14": {
+                "base": 14.0,
+                "auto_fire": false,
+                "type": "dmr"
+            },
+            "QBU": {
+                "base": 14.0,
+                "auto_fire": false,
+                "type": "dmr"
+            },
+            "Dragunov": {
+                "base": 22.0,
+                "auto_fire": false,
+                "type": "dmr"
+            },
+            "SKS": {
+                "base": 14.0,
+                "auto_fire": false,
+                "type": "dmr"
             }
         },
         "stance_multipliers": {
-            "stand": 1.0,
-            "squat": 0.8,
-            "lie": 0.6
+            "ar": {"stand": 1.0, "squat": 0.8, "lie": 0.6},
+            "smg": {"stand": 1.0, "squat": 0.8, "lie": 0.7},
+            "lmg": {"stand": 1.0, "squat": 0.4, "lie": 0.2},
+            "dmr": {"stand": 1.0, "squat": 1.0, "lie": 1.0}
         },
         "scope_multipliers": {
             "holographic": 1.0,
@@ -666,17 +743,20 @@
         },
         "grip_multipliers": {
             "vertical": 0.794,
-            "half": 0.9,
+            "half": 0.91,
             "light": 1.0,
             "thumb": 0.84,
             "titled": 0.88,
-            "laser":1.0
+            "laser": 1.0
         },
         "muzzle_multipliers": {
-            "rifle_compensator": 0.824,
-            "rifle_silencer": 1.0,
-            "rifle_suppressor": 0.9,
-            "rifle_braker": 0.9,
+            "ar_dmr_compensator": 0.79,
+            "ar_dmr_silencer": 1.0,
+            "ar_dmr_suppressor": 0.9,
+            "ar_dmr_braker": 0.89,
+            "dmr_sr_compensator": 0.824,
+            "dmr_sr_silencer": 1.0,
+            "dmr_sr_suppressor": 0.9,
             "smg_suppressor": 0.9,
             "smg_compensator": 0.75,
             "smg_silencer": 1.0
@@ -684,7 +764,8 @@
         "stock_multipliers": {
             "tactical": 0.95,
             "heavy": 0.9,
-            "uzi": 0.8
+            "uzi": 0.7,
+            "cheer_pad": 0.8
         }
     },
     "map_data": {

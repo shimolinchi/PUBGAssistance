@@ -33,12 +33,14 @@ class RegionManager:
             "crosshair_region": {"left": 800, "top": 900, "width": 300, "height": 100},
 
             "weapon1_name_region": {"left": 500, "top": 300, "width": 150, "height": 40},
+            "weapon1_number_region": {"left": 500, "top": 300, "width": 30, "height": 30},
             "weapon1_scope_region": {"left": 500, "top": 360, "width": 80, "height": 30},
             "weapon1_grip_region": {"left": 500, "top": 400, "width": 80, "height": 30},
             "weapon1_muzzle_region": {"left": 500, "top": 440, "width": 80, "height": 30},
             "weapon1_stock_region": {"left": 500, "top": 480, "width": 80, "height": 30},
 
             "weapon2_name_region": {"left": 1300, "top": 300, "width": 150, "height": 40},
+            "weapon2_number_region": {"left": 500, "top": 300, "width": 30, "height": 30},
             "weapon2_scope_region": {"left": 1300, "top": 360, "width": 80, "height": 30},
             "weapon2_grip_region": {"left": 1300, "top": 400, "width": 80, "height": 30},
             "weapon2_muzzle_region": {"left": 1300, "top": 440, "width": 80, "height": 30},
@@ -172,8 +174,10 @@ class RegionManager:
 
     def calibrate_region(self, region_name):
         if region_name not in self.base_regions: return
-        # 【核心修正】：大地图和小地图强制正方形
-        force_square = (region_name in ["minimap_region", "largemap_region"])
+        force_square = (region_name in ["minimap_region", "largemap_region",
+                                    "weapon1_number_region", "weapon2_number_region",
+                                    "weapon1_scope_region", "weapon1_grip_region", "weapon1_muzzle_region", "weapon1_stock_region",
+                                    "weapon2_scope_region", "weapon2_grip_region", "weapon2_muzzle_region", "weapon2_stock_region"])
         self._start_calibration_overlay(region_name, is_line=False, is_square=force_square)
 
     def calibrate_scale(self, scale_name):

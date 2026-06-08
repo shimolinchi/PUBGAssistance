@@ -143,7 +143,7 @@ class MinimapRadarModule:
             ax, ay, color = pt['x'], pt['y'], pt['color']
             self.canvas.create_oval(ax-3, ay-3, ax+3, ay+3, fill=color, outline="black", tags="marker")
             self.canvas.create_rectangle(ax-10, ay-20, ax+10, ay, outline=color, width=2, tags="marker")
-            self.canvas.create_text(ax, ay+15, text=f"{pt['dist']:.1f}m", fill=color, font=("Arial", 12, "bold"), tags="marker")
+            self.canvas.create_text(ax, ay+15, text=f"{pt['dist']:.1f}m", fill=color, font=("Microsoft YaHei", 12, "bold"), tags="marker")
     
     def _apply_nms(self, candidates, min_dist):
         final = []

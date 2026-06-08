@@ -11,6 +11,7 @@ class WeaponDetector:
     """
     当前手持武器检测模块
     维护两个主武器名称（由装备栏模块更新），实时识别手持武器并回调。
+    增加防抖：连续两帧识别到同一武器才更新。
     """
 
     def __init__(self, region_manager, templates_dir="templates/weapons",
@@ -21,23 +22,26 @@ class WeaponDetector:
         self.match_threshold = match_threshold
         self.debug = debug
 
-        # 主武器列表：由装备栏模块调用 update_primary_weapons 设置
-        self.primary_weapons = [None, None]   # [武器1, 武器2]
-
-        # 特殊武器列表（无需压枪，但需通知主函数启动对应助手）
+        # 主武器列表
+        self.primary_weapons = [None, None]
         self.special_weapons = ["Rocket", "Grenade", "VSS", "Crossbow"]
 
-        self.templates = {}      # 武器名 -> 模板列表（与 weapon_identifier 相同结构）
+        self.templates = {}
         self._load_templates()
 
         self._enabled = False
         self._thread = None
         self._stop = False
-        self._callback = None    # 回调函数，参数 (weapon_name, score)
+        self._callback = None
 
         self.current_weapon = None
         self.current_score = 0.0
         self.last_match_location = None
+
+        # 防抖相关
+        self.pending_weapon = None
+        self.pending_counter = 0
+        self.pending_score = 0.0
 
     def set_enabled(self, enabled: bool, callback: Optional[Callable] = None):
         self._enabled = enabled
@@ -54,7 +58,6 @@ class WeaponDetector:
             self._thread = None
 
     def update_primary_weapons(self, weapon1: Optional[str], weapon2: Optional[str]):
-        """由装备栏检测模块调用，更新当前装备的主武器"""
         self.primary_weapons = [weapon1, weapon2]
 
     def _run(self):
@@ -62,20 +65,38 @@ class WeaponDetector:
             while not self._stop and self._enabled:
                 start = time.time()
                 weapon, score = self._identify_weapon(sct)
-                weapon, score = self._identify_weapon(sct)
-                if weapon:
-                    self.current_weapon = weapon
-                    self.current_score = score
+
+                # 防抖逻辑
+                if weapon is not None and score >= self.match_threshold:
+                    if self.pending_weapon == weapon:
+                        self.pending_counter += 1
+                        if self.pending_counter >= 2:
+                            # 连续两帧识别到相同武器，确认切换
+                            if self.current_weapon != weapon:
+                                self.current_weapon = weapon
+                                self.current_score = score
+                                if self._callback:
+                                    self._callback(weapon, score)
+                    else:
+                        # 新候选，重置计数器
+                        self.pending_weapon = weapon
+                        self.pending_score = score
+                        self.pending_counter = 1
                 else:
-                    self.current_weapon = None
-                    self.current_score = 0.0
-                if self._callback:
-                    self._callback(weapon, score)
+                    # 未识别到武器，重置防抖状态
+                    self.pending_weapon = None
+                    self.pending_counter = 0
+                    if self.current_weapon is not None:
+                        self.current_weapon = None
+                        self.current_score = 0.0
+                        if self._callback:
+                            self._callback(None, 0.0)
+
                 elapsed = time.time() - start
                 sleep = max(0, (1.0 / self.fps) - elapsed)
                 time.sleep(sleep)
 
-    # ================= 图像预处理（与 weapon_identifier 相同） =================
+    # ================= 图像预处理 =================
     def _preprocess_image(self, img_bgr):
         gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
         blurred = cv2.GaussianBlur(gray, (3, 3), 0)
@@ -84,7 +105,7 @@ class WeaponDetector:
         edges_dilated = cv2.dilate(edges, kernel, iterations=1)
         return edges_dilated
 
-    # ================= 加载模板（与 weapon_identifier 相同） =================
+    # ================= 加载模板 =================
     def _load_templates(self):
         print(f"[武器检测] 正在从 {self.templates_dir} 加载武器模板...")
         weapon_region = self.rm.get_templates_region("weapon_region")
@@ -115,33 +136,26 @@ class WeaponDetector:
                     else:
                         cropped = img
 
-                    # 预处理模板（边缘+膨胀）
                     processed_tpl = self._preprocess_image(cropped)
                     mask_kernel = np.ones((5, 5), np.uint8)
                     mask = cv2.dilate(processed_tpl, mask_kernel, iterations=1)
                     if cv2.countNonZero(mask) == 0:
-                        continue 
+                        continue
 
-                    # 生成内部掩码（轮廓内部填充）
                     inner_mask = np.zeros_like(processed_tpl, dtype=np.uint8)
-                    # 提取轮廓（外轮廓）
                     contours, _ = cv2.findContours(processed_tpl, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
                     if contours:
-                        # 取面积最大的轮廓（通常武器只有一个）
                         cnt = max(contours, key=cv2.contourArea)
-                        # 填充轮廓内部
                         cv2.drawContours(inner_mask, [cnt], -1, 255, -1)
-                        # 可选：对内部进行轻微腐蚀，避免边缘像素影响方差
                         inner_mask = cv2.erode(inner_mask, np.ones((2,2), np.uint8), iterations=1)
                     else:
-                        # 如果没有轮廓（理论上不应发生），使用全图掩码（即不检查）
                         inner_mask = np.ones_like(processed_tpl, dtype=np.uint8) * 255
 
                     if cv2.countNonZero(processed_tpl) > 5:
                         self.templates[weapon_name].append({
                             "tpl": processed_tpl,
                             "mask": mask,
-                            "inner_mask": inner_mask   # 存储内部掩码
+                            "inner_mask": inner_mask
                         })
                 print(f"  - {weapon_name}: 加载了 {len(self.templates[weapon_name])} 个模板")
         print("[武器检测] 模板加载完毕。")
@@ -156,14 +170,11 @@ class WeaponDetector:
         try:
             screenshot = sct.grab(weapon_region_real)
             img_bgr = cv2.cvtColor(np.array(screenshot), cv2.COLOR_BGRA2BGR)
-            original_img = img_bgr.copy()   # 保存原图用于内部区域方差检查
             img_bgr = cv2.resize(img_bgr, (weapon_region_base["width"], weapon_region_base["height"]))
-            original_img = cv2.resize(original_img, (weapon_region_base["width"], weapon_region_base["height"]))
             current_img = self._preprocess_image(img_bgr)
             if cv2.countNonZero(current_img) < 5:
                 return None, 0.0
 
-            # 构建候选武器列表
             candidates = []
             for w in self.primary_weapons:
                 if w and w in self.templates:
@@ -176,9 +187,6 @@ class WeaponDetector:
 
             best_match_weapon = None
             best_match_score = 0.0
-            # best_match_location = None
-            # best_match_item = None   # 保存最佳匹配的模板项（包含 inner_mask）
-
             for weapon_name in candidates:
                 for item in self.templates[weapon_name]:
                     tpl = item["tpl"]
@@ -187,43 +195,16 @@ class WeaponDetector:
                     if h_tpl > current_img.shape[0] or w_tpl > current_img.shape[1]:
                         continue
                     res = cv2.matchTemplate(current_img, tpl, cv2.TM_CCORR_NORMED, mask=mask)
-                    _, max_val, _, max_loc = cv2.minMaxLoc(res)
+                    _, max_val, _, _ = cv2.minMaxLoc(res)
                     if np.isinf(max_val) or np.isnan(max_val):
                         max_val = 0.0
                     if max_val > best_match_score:
                         best_match_score = max_val
                         best_match_weapon = weapon_name
-                        # best_match_location = (max_loc[0], max_loc[1], w_tpl, h_tpl)
-                        # best_match_item = item
 
             if best_match_weapon is not None:
-                # x, y, w, h = best_match_location
-                # # ========== 方差检查（使用内部掩码） ==========
-                # inner_mask = best_match_item["inner_mask"]
-                # 提取匹配区域的原图（彩色）
-                # matched_roi = original_img[y:y+h, x:x+w]
-                # # 将内部掩码缩放到匹配区域尺寸（理论上尺寸已一致，但为了保险）
-                # if inner_mask.shape[0] != h or inner_mask.shape[1] != w:
-                #     inner_mask = cv2.resize(inner_mask, (w, h))
-                # # 提取灰度图
-                # gray_roi = cv2.cvtColor(matched_roi, cv2.COLOR_BGR2GRAY)
-                # 获取内部掩码区域内的像素值
-                # masked_pixels = gray_roi[inner_mask > 0]
-                # if len(masked_pixels) > 10:
-                #     variance = np.var(masked_pixels)
-                #     variance_threshold = 750   # 可调，武器内部通常比较平滑，杂草方差大
-                #     if variance > variance_threshold:
-                #         if self.debug:
-                #             print(f"[武器检测] {best_match_weapon} 内部区域方差 {variance:.1f} > {variance_threshold}，丢弃")
-                #         return None, best_match_score
-                # else:
-                #     # 内部区域像素太少，可能是模板问题，跳过检查
-                #     pass
-
-                # 武器特定阈值（手雷要求更高）
                 threshold = 0.6 if best_match_weapon == "Grenade" else self.match_threshold
                 if best_match_score >= threshold:
-                    # print(f"[调试] 武器: {best_match_weapon}, 分数: {best_match_score:.4f}, 阈值: {threshold}")
                     return best_match_weapon, best_match_score
                 else:
                     return None, best_match_score
@@ -232,9 +213,9 @@ class WeaponDetector:
         except Exception as e:
             print(f"[武器检测错误] {e}")
             return None, 0.0
-        
+
     def get_current_weapon(self):
         return self.current_weapon, self.current_score
-    
+
     def get_last_match_location(self):
         return self.last_match_location

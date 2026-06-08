@@ -22,21 +22,18 @@ class EquipmentDetectorTester:
         self.root.configure(bg="#2C3E50")
 
         self.rm = RegionManager(self.root, config_file="config.json")
-        # 创建检测器，调试模式开启
         self.detector = EquipmentDetector(
             self.rm, fps=5, idle_timeout=2.0,
-            debug=True,  # 开启内部调试打印
+            debug=True,
             on_status_change=self.on_status_change
         )
         self.detector.set_enabled(True, self.on_equipment_update)
 
-        # 存储数据
         self.is_open = False
         self.weapons_data = {1: {}, 2: {}}
         self.listener_running = False
 
-        # 调试显示
-        self.debug_win_name = "Equipment Debug (Press 'q' to close)"
+        self.debug_win_name = "Equipment Debug"
         self.debug_running = False
         self.debug_thread = None
 
@@ -45,7 +42,6 @@ class EquipmentDetectorTester:
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
 
     def init_ui(self):
-        # 标题和状态
         tk.Label(self.root, text="装备栏识别测试台（调试版）", fg="white", bg="#2C3E50",
                  font=("Microsoft YaHei", 14, "bold")).pack(pady=10)
         self.status_label = tk.Label(self.root, text="状态: 未打开装备栏", fg="#F1C40F", bg="#2C3E50",
@@ -55,7 +51,6 @@ class EquipmentDetectorTester:
         # 阈值调节框架
         thresh_frame = tk.LabelFrame(self.root, text="匹配阈值调节", bg="#34495E", fg="white", font=("Arial", 10, "bold"))
         thresh_frame.pack(fill="x", padx=10, pady=5)
-        # 武器名阈值
         frame_name = tk.Frame(thresh_frame, bg="#34495E")
         frame_name.pack(fill="x", padx=5, pady=2)
         tk.Label(frame_name, text="武器名阈值:", bg="#34495E", fg="white").pack(side="left")
@@ -64,7 +59,6 @@ class EquipmentDetectorTester:
                                            orient=tk.HORIZONTAL, variable=self.name_thresh_var,
                                            command=self.on_thresh_change, length=200)
         self.name_thresh_slider.pack(side="left", padx=10)
-        # 配件阈值
         frame_attach = tk.Frame(thresh_frame, bg="#34495E")
         frame_attach.pack(fill="x", padx=5, pady=2)
         tk.Label(frame_attach, text="配件阈值:", bg="#34495E", fg="white").pack(side="left")
@@ -74,7 +68,7 @@ class EquipmentDetectorTester:
                                              command=self.on_thresh_change, length=200)
         self.attach_thresh_slider.pack(side="left", padx=10)
 
-        # 武器1/2显示区域（原有）
+        # 武器1/2显示区域
         frame1 = tk.LabelFrame(self.root, text="武器 1", bg="#34495E", fg="white", font=("Arial", 10, "bold"))
         frame1.pack(fill="x", padx=10, pady=5)
         self.weapon1_vars = {}
@@ -113,12 +107,15 @@ class EquipmentDetectorTester:
         self.btn_debug = tk.Button(btn_frame, text="开启调试窗口", command=self.toggle_debug_window,
                                    bg="#8E44AD", fg="white", font=("Microsoft YaHei", 10))
         self.btn_debug.pack(side="left", padx=5)
+        # 显示匹配分数按钮（使用 TM_CCOEFF_NORMED）
+        self.btn_scores = tk.Button(btn_frame, text="显示匹配分数 (CCOEFF)", command=self.show_match_scores,
+                                    bg="#27AE60", fg="white", font=("Microsoft YaHei", 10))
+        self.btn_scores.pack(side="left", padx=5)
 
-        tk.Label(self.root, text="快捷键: Tab (全局监听) | 调试窗口按 'q' 关闭", 
+        tk.Label(self.root, text="快捷键: Tab (全局监听) | 调试窗口按 'q' 关闭",
                  fg="#BDC3C7", bg="#2C3E50", font=("Arial", 9)).pack(pady=10)
 
     def on_thresh_change(self, val):
-        """动态调整检测器阈值"""
         self.detector.thresholds["names"] = self.name_thresh_var.get()
         self.detector.thresholds["scopes"] = self.attach_thresh_var.get()
         self.detector.thresholds["grips"] = self.attach_thresh_var.get()
@@ -137,16 +134,16 @@ class EquipmentDetectorTester:
             self.btn_debug.config(text="开启调试窗口", bg="#8E44AD")
 
     def _debug_display_loop(self):
-        """显示实时截图和匹配结果"""
         with mss.mss() as sct:
-            # 预先获取所有需要显示的区域
             categories = {
                 "weapon1_name": "weapon1_name_region",
                 "weapon1_scope": "weapon1_scope_region",
                 "weapon1_grip": "weapon1_grip_region",
+                "weapon1_stock": "weapon1_stock_region",   # 新增
                 "weapon2_name": "weapon2_name_region",
                 "weapon2_scope": "weapon2_scope_region",
                 "weapon2_grip": "weapon2_grip_region",
+                "weapon2_stock": "weapon2_stock_region",   # 新增
             }
             while self.debug_running:
                 for name, region_key in categories.items():
@@ -155,17 +152,59 @@ class EquipmentDetectorTester:
                         continue
                     img = sct.grab(rect)
                     img_bgr = cv2.cvtColor(np.array(img), cv2.COLOR_BGRA2BGR)
-                    # 缩放到基准大小
                     base_region = self.rm.get_templates_region(region_key)
                     if base_region:
                         img_resized = cv2.resize(img_bgr, (base_region["width"], base_region["height"]))
                     else:
                         img_resized = img_bgr
-                    # 显示
                     cv2.imshow(f"Debug: {name}", img_resized)
                 cv2.waitKey(1)
                 time.sleep(0.1)
             cv2.destroyAllWindows()
+
+    def show_match_scores(self):
+        """计算当前所有配件槽与所有模板的匹配分数（使用 TM_CCOEFF_NORMED）并显示在新窗口"""
+        win = tk.Toplevel(self.root)
+        win.title("模板匹配分数详情 (TM_CCOEFF_NORMED)")
+        win.geometry("600x500")
+        win.attributes("-topmost", True)
+        text = tk.Text(win, wrap=tk.WORD, font=("Consolas", 10))
+        text.pack(fill=tk.BOTH, expand=True)
+
+        with mss.mss() as sct:
+            slots = [
+                (1, "scope", "weapon1_scope_region", self.detector.templates["scopes"]),
+                (1, "grip", "weapon1_grip_region", self.detector.templates["grips"]),
+                (1, "muzzle", "weapon1_muzzle_region", self.detector.templates["muzzles"]),
+                (1, "stock", "weapon1_stock_region", self.detector.templates["stocks"]),
+                (2, "scope", "weapon2_scope_region", self.detector.templates["scopes"]),
+                (2, "grip", "weapon2_grip_region", self.detector.templates["grips"]),
+                (2, "muzzle", "weapon2_muzzle_region", self.detector.templates["muzzles"]),
+                (2, "stock", "weapon2_stock_region", self.detector.templates["stocks"]),
+            ]
+
+            for weapon_slot, part_name, region_key, templates_dict in slots:
+                rect = self.rm.get_real_region(region_key)
+                if not rect or not templates_dict:
+                    continue
+                img = sct.grab(rect)
+                img_bgr = cv2.cvtColor(np.array(img), cv2.COLOR_BGRA2BGR)
+                img_resized = self.detector._resize_to_base(img_bgr, region_key)
+                if img_resized is None:
+                    continue
+                text.insert(tk.END, f"\n=== 武器{weapon_slot} {part_name} ===\n")
+                for name, tpl_list in templates_dict.items():
+                    for item in tpl_list:
+                        tpl_bgr = item["bgr"]
+                        mask = item["mask"]
+                        if tpl_bgr.shape[0] > img_resized.shape[0] or tpl_bgr.shape[1] > img_resized.shape[1]:
+                            continue
+                        # 使用 TM_CCOEFF_NORMED
+                        res = cv2.matchTemplate(img_resized, tpl_bgr, cv2.TM_CCOEFF_NORMED, mask=mask)
+                        _, max_val, _, _ = cv2.minMaxLoc(res)
+                        text.insert(tk.END, f"{name}: {max_val:.3f}\n")
+                text.insert(tk.END, "-"*50 + "\n")
+            text.insert(tk.END, "\n说明：分数为 TM_CCOEFF_NORMED 匹配结果，越接近1越相似。")
 
     def on_equipment_update(self, is_open, weapons):
         self.is_open = is_open
@@ -181,7 +220,6 @@ class EquipmentDetectorTester:
         else:
             self.status_label.config(text="状态: 装备栏未打开", fg="#E74C3C")
 
-        # 更新武器1
         w1 = self.weapons_data.get(1, {})
         for label, key in [("名称", "name"), ("倍镜", "scope"), ("握把", "grip"), ("枪口", "muzzle"), ("枪托", "stock")]:
             value = w1.get(key) or "无"
@@ -193,7 +231,6 @@ class EquipmentDetectorTester:
             else:
                 score_var.set("")
 
-        # 更新武器2
         w2 = self.weapons_data.get(2, {})
         for label, key in [("名称", "name"), ("倍镜", "scope"), ("握把", "grip"), ("枪口", "muzzle"), ("枪托", "stock")]:
             value = w2.get(key) or "无"
@@ -223,7 +260,6 @@ class EquipmentDetectorTester:
             try:
                 if key == keyboard.Key.tab:
                     self.root.after(0, self.detector.on_tab_press)
-                # 按 F5 保存当前截图（调试用）
                 if key == keyboard.Key.f5:
                     self.save_debug_screenshots()
             except:
@@ -233,7 +269,6 @@ class EquipmentDetectorTester:
         self.listener_running = True
 
     def save_debug_screenshots(self):
-        """保存当前所有装备栏区域截图到文件"""
         import datetime
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         save_dir = "debug_screenshots"

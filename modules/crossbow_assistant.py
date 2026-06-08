@@ -100,8 +100,8 @@ class CrossbowAssistant:
 
         if not is_found:
             warn_y = self.sh * 0.75
-            self.canvas.create_text(self.sw/2, warn_y, text="[ 未检测到弩/VSS准星，图层已隐藏 ]",
-                                    fill="#E74C3C", font=("Microsoft YaHei", 12, "bold"), tags="crossbow_hud")
+            self.canvas.create_text(self.sw/2, warn_y, text="未检测到十字弩准星",
+                                    fill="#E74C3C", font=("Microsoft YaHei", 15, "bold"), tags="crossbow_hud")
             return
 
         h_line_width = 30
