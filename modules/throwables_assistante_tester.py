@@ -37,7 +37,7 @@ class ThrowablesTester:
         self.is_running = False
         self.linkage_thread = None
 
-        # 键盘监听器，用于测试 V 键
+        # 键盘监听器，用于测试 V 键以及 Q/E 切换标点
         self.kb_listener = keyboard.Listener(on_press=self.on_key_press)
         self.kb_listener.start()
 
@@ -75,8 +75,9 @@ class ThrowablesTester:
             "【测试指南】\n"
             "1. 请先在游戏中校准好小地图和仰角区域。\n"
             "2. 开启助手后，按 [V] 键自动瞬爆拉环并计时。\n"
-            "3. 系统会模拟按 R 拉环，并在对应时间后抛出。\n"
-            "4. 注意：请确保游戏为无边框窗口模式。"
+            "3. 按 [Q]/[E] 键切换当前使用的标点颜色。\n"
+            "4. 系统会模拟按 R 拉环，并在对应时间后抛出。\n"
+            "5. 注意：请确保游戏为无边框窗口模式。"
         )
         tk.Label(self.root, text=info_text, fg="#BDC3C7", bg="#2C3E50", justify="left").pack(pady=10)
 
@@ -107,6 +108,10 @@ class ThrowablesTester:
         if not self.is_running:
             return
         try:
+            # 处理 Q/E 键切换标点颜色（传递给助手）
+            self.throwables.on_key_press(key)
+
+            # 处理 V 键瞬爆
             if hasattr(key, 'char') and key.char:
                 if key.char.lower() == 'v':
                     self.throwables.toggle_auto_throw()

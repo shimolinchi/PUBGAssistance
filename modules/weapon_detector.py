@@ -24,7 +24,7 @@ class WeaponDetector:
 
         # 主武器列表
         self.primary_weapons = [None, None]
-        self.special_weapons = ["Rocket", "Grenade", "VSS", "Crossbow"]
+        self.special_weapons = ["Rocket", "Grenade", "VSS", "Crossbow","C4"]
 
         self.templates = {}
         self._load_templates()

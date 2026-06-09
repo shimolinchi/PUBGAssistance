@@ -17,6 +17,7 @@ from modules.map_assistant import MapPointAssistant
 from modules.throwables_assistant import ThrowablesAssistant
 from modules.vss_assistant import VssAssistant
 from modules.crossbow_assistant import CrossbowAssistant
+from modules.c4_assistant import C4Assistant
 from modules.largemap_radar import AutoMapDistanceAssistant
 from modules.gesture_identifier import GestureIdentifier
 from modules.weapon_detector import WeaponDetector
@@ -101,7 +102,17 @@ class TacticalHub:
             self.region_manager, fps=30, idle_timeout=10.0, debug=False,
             on_status_change=self.on_equipment_status
         )
-        # self.equipment_detector = EquipmentDetector(self.region_manager, fps=20, idle_timeout=2.0, debug=False)
+
+        # 新增：C4 助手
+        self.c4_assistant = C4Assistant(
+            root=self.root,
+            region_manager=self.region_manager,
+            minimap_module=self.minimap,
+            fps=30,
+            explosion_margin=2.0,
+            target_speed=50.0,
+            jump_distance_threshold=20.0   # 推荐跳车距离（米）
+        )
 
         # 状态变量
         self.weapon_detection_enabled = True
@@ -148,6 +159,8 @@ class TacticalHub:
             self.update_status_display()   # 刷新状态栏
 
         def on_weapon_detected(weapon_name, score):
+            # 传递给 C4 助手
+            self.c4_assistant.on_weapon_detected(weapon_name, score)
 
             if weapon_name and score >= 0.5:
                 self.current_weapon = weapon_name
@@ -182,7 +195,6 @@ class TacticalHub:
             self.update_status_display()
 
         # 设置回调
-
         self.equipment_detector.set_enabled(True, on_equipment_update)
         self.weapon_detector.set_enabled(True, on_weapon_detected)
         self.gesture_id.set_enabled(True, on_gesture_identified)
@@ -266,7 +278,6 @@ class TacticalHub:
             ctypes.windll.user32.SetWindowDisplayAffinity(hwnd, 17)
         except Exception as e:
             print(f"[状态栏] 防截图 API 调用失败: {e}")
-            # self.status_overlay.withdraw()
 
     def set_status(self, status_text, status_type="info"):
         """设置状态栏文本和背景色
@@ -348,7 +359,8 @@ class TacticalHub:
             ("火箭筒", "rocket"),
             ("投掷物", "throwables"),
             ("VSS", "vss"),
-            ("十字弩", "crossbow")
+            ("十字弩", "crossbow"),
+            ("C4", "c4")
         ]
         self.assistant_btns = {}
         frame = tk.Frame(self.launch_tab, bg="#F9FAFB")
@@ -483,7 +495,7 @@ class TacticalHub:
 
     def toggle_assistant(self, key):
         # 仅当显示层开启且当前武器匹配时才允许手动切换
-        weapon_map = {"rocket": "Rocket", "throwables": "Grenade", "vss": "VSS", "crossbow": "Crossbow"}
+        weapon_map = {"rocket": "Rocket", "throwables": "Grenade", "vss": "VSS", "crossbow": "Crossbow", "c4": "C4"}
         if key == "mortar":
             # 迫击炮独立控制，不依赖武器
             self.mortar.enable_module(not self.mortar.is_enabled)
@@ -723,7 +735,8 @@ class TacticalHub:
             "Rocket": self.rocket,
             "Grenade": self.throwables,
             "VSS": self.vss_assist,
-            "Crossbow": self.crossbow_assist
+            "Crossbow": self.crossbow_assist,
+            "C4": self.c4_assistant
         }
         for name, mod in special.items():
             if self.display_enabled and weapon_name == name:
@@ -731,7 +744,7 @@ class TacticalHub:
             else:
                 mod.enable_module(False)
         for btn_key, mod in [("rocket", self.rocket), ("throwables", self.throwables),
-                             ("vss", self.vss_assist), ("crossbow", self.crossbow_assist)]:
+                             ("vss", self.vss_assist), ("crossbow", self.crossbow_assist), ("c4", self.c4_assistant)]:
             if btn_key in self.assistant_btns:
                 self.assistant_btns[btn_key].set_active(mod.is_enabled)
 
@@ -756,7 +769,7 @@ class TacticalHub:
         self.btn_recoil.set_text(f"{'关闭' if self.recoil_enabled else '开启'}辅助压枪")
         self.recoil.set_enabled(self.recoil_enabled)
         if self.recoil_enabled:
-            if self.current_weapon and self.current_weapon not in ["Rocket", "Grenade", "VSS", "Crossbow"]:
+            if self.current_weapon and self.current_weapon not in ["Rocket", "Grenade", "VSS", "Crossbow", "C4"]:
                 self.recoil.update_current_weapon(self.current_weapon)
                 # 获取当前武器的配件
                 slot = self.weapon_slot_map.get(self.current_weapon)
@@ -798,6 +811,9 @@ class TacticalHub:
             self.throwables.toggle_auto_throw()
 
     def on_key_press(self, key):
+        self.c4_assistant.on_key_press(key)
+        self.throwables.on_key_press(key)
+
         try:
             if key == keyboard.Key.home:
                 if self.root.state() == 'normal':
@@ -838,6 +854,10 @@ class TacticalHub:
             self.alt_pressed = False
 
     def on_mouse_click(self, x, y, button, pressed):
+        # 左键按下时通知 C4 助手（用于安装 C4）
+        if button == mouse.Button.left and pressed:
+            self.c4_assistant.on_mouse_left_press()
+
         # 左键+中键 地图点位助手
         if button == mouse.Button.left:
             self.left_pressed = pressed
@@ -905,6 +925,7 @@ class TacticalHub:
         self.weapon_detector.set_enabled(False)
         self.gesture_id.set_enabled(False)
         self.recoil.shutdown()
+        self.c4_assistant.shutdown()   # 关闭 C4 助手
         if self.status_overlay:
             self.status_overlay.destroy()
         self.keyboard_listener.stop()

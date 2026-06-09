@@ -14,13 +14,14 @@ except ImportError:
     print("[C4助手] Pillow 未安装，图标将显示为文字")
 
 class C4Assistant:
-    def __init__(self, root, region_manager, minimap_module, fps=30, explosion_margin=2.0, target_speed=50.0):
+    def __init__(self, root, region_manager, minimap_module, fps=30, explosion_margin=2.0, target_speed=50.0, jump_distance_threshold=20.0):
         self.root = root
         self.rm = region_manager
         self.minimap = minimap_module
         self.fps = fps
         self.explosion_margin = explosion_margin
         self.target_speed = target_speed
+        self.jump_distance_threshold = jump_distance_threshold  # 新增：跳车距离阈值（米）
 
         self.sw = self.rm.real_w
         self.sh = self.rm.real_h
@@ -39,6 +40,7 @@ class C4Assistant:
         self.update_thread = None
 
         self.start_prompt_shown = False
+        self.jump_prompt_shown = False          # 新增：是否已显示过跳车提示
 
         self.color_icon_img = None
         self._load_color_icon()
@@ -89,7 +91,7 @@ class C4Assistant:
         except:
             pass
 
-    def set_enabled(self, enabled: bool):
+    def enable_module(self, enabled: bool):
         self.is_enabled = enabled
         if not enabled:
             self._reset()
@@ -124,6 +126,7 @@ class C4Assistant:
         total_seconds = 16.0 - self.explosion_margin
         self.explosion_time = time.time() + total_seconds
         self.start_prompt_shown = False
+        self.jump_prompt_shown = False           # 新增：重置跳车提示标志
         self._start_update_loop()
 
     def _start_update_loop(self):
@@ -147,6 +150,7 @@ class C4Assistant:
             if new_dist > 0:
                 self.distance = new_dist
 
+            # 推荐起步逻辑（原有）
             recommended_speed = 0.0
             if remaining > 0 and self.distance > 0:
                 recommended_speed = (self.distance / remaining) * 3.6
@@ -156,6 +160,12 @@ class C4Assistant:
                 show_start_prompt = True
                 self.start_prompt_shown = True
                 self.root.after(2000, self._clear_start_prompt)
+
+            # 新增：推荐跳车逻辑（首次距离 ≤ 阈值）
+            if not self.jump_prompt_shown and self.distance > 0 and self.distance <= self.jump_distance_threshold:
+                self.jump_prompt_shown = True
+                self.root.after(0, self._show_jump_prompt)
+                self.root.after(2000, self._clear_jump_prompt)
 
             countdown = max(0, remaining)
             if countdown <= 2:
@@ -177,12 +187,26 @@ class C4Assistant:
         if self.canvas:
             self.canvas.delete("start_prompt")
 
-    def _draw_color_indicator(self):
+    def _clear_jump_prompt(self):
+        """清除推荐跳车提示"""
+        if self.canvas:
+            self.canvas.delete("jump_prompt")
+
+    def _show_jump_prompt(self):
+        """显示推荐跳车文本（与推荐起步相同位置样式）"""
+        if not self.canvas:
+            return
         cx = self.sw // 2
+        cy = self.sh // 2 + 280
+        self.canvas.create_text(cx, cy + 50, text="推荐跳车", fill="#E74C3C",
+                                font=("Microsoft YaHei", 15, "bold"), tags="jump_prompt")
+
+    def _draw_color_indicator(self):
+        cx = self.sw // 4
         cy = self.sh // 2 + 280
         icon_y = cy + 40
 
-        color_hex = {"Yellow": "#E3D43C", "Orange": "#B3500D", "Blue": "#1A3EA3", "Green": "#109166"}
+        color_hex = {"Yellow": "#E9E511", "Orange": "#DA6226", "Blue": "#017BC2", "Green": "#0F9D16"}
         hex_code = color_hex.get(self.selected_color, "#FFFFFF")
 
         # 文字与标点同色
@@ -220,7 +244,7 @@ class C4Assistant:
             self.canvas.create_text(cx, cy + 5, text=f"建议车速: {speed_text}", fill="#3498DB",
                                     font=("Microsoft YaHei", 15, "bold"), tags="c4_hud")
             if show_start_prompt:
-                self.canvas.create_text(cx, cy + 100, text="推荐起步", fill="#2ECC71",
+                self.canvas.create_text(cx, cy + 50, text="推荐起步", fill="#2ECC71",
                                         font=("Microsoft YaHei", 15, "bold"), tags="start_prompt")
 
     def _show_installing(self):
@@ -238,6 +262,7 @@ class C4Assistant:
         if self.canvas:
             self.canvas.delete("c4_hud")
             self.canvas.delete("start_prompt")
+            self.canvas.delete("jump_prompt")      # 清除跳车提示
 
     def _reset(self):
         self.thread_running = False
@@ -247,6 +272,7 @@ class C4Assistant:
         self.is_active = False
         self.distance = 0.0
         self.start_prompt_shown = False
+        self.jump_prompt_shown = False            # 重置跳车提示标志
         self._clear_display()
         if self.is_enabled:
             self._update_status_display()
@@ -277,7 +303,7 @@ class C4Assistant:
                 self.selected_color = self.color_priority[new_idx]
 
             # 显示临时提示
-            self.root.after(0, self._show_color_change)
+            # self.root.after(0, self._show_color_change)
             # 非活跃状态下，立即刷新显示
             if not self.is_active and not self.is_installing:
                 self.root.after(0, self._update_status_display)
@@ -294,46 +320,18 @@ class C4Assistant:
                                 font=("Microsoft YaHei", 15), tags="color_tip")
         self.root.after(1500, lambda: self.canvas.delete("color_tip"))
 
-    def _draw_color_indicator(self):
-        cx = self.sw // 2
-        cy = self.sh // 2 + 280
-        icon_y = cy + 40
-
-        color_hex = {"Yellow": "#E3D43C", "Orange": "#B3500D", "Blue": "#1A3EA3", "Green": "#109166"}
-        hex_code = color_hex.get(self.selected_color, "#FFFFFF")
-
-        # 文字
-        self.canvas.create_text(cx, icon_y, text="当前使用标点：", fill=hex_code,
-                                font=("Microsoft YaHei", 15), tags="c4_hud")
-        # 图标
-        colored_icon = self._get_colored_icon(self.selected_color)
-        if colored_icon:
-            self.current_icon = colored_icon
-            self.canvas.create_image(cx + 70, icon_y, image=colored_icon, anchor="center", tags="c4_hud")
-        else:
-            self.canvas.create_text(cx, icon_y, text=self.selected_color, fill=hex_code,
-                                    font=("Microsoft YaHei", 15, "bold"), tags="c4_hud")
-
     def _refresh_color_display(self):
-            """强制刷新标点颜色显示（不删除其他内容）"""
-            if not self.is_enabled or not self.canvas:
-                return
-                
-            try:
-                self._update_status_display()
-                # 强制立刻刷新画面，不等待主事件循环排队
-                if hasattr(self, 'overlay') and self.overlay:
-                    self.overlay.update()
-            except Exception as e:
-                print(f"[C4助手] UI 刷新异常: {e}")
-
-    def _show_color_change(self):
-        if not self.canvas:
+        """强制刷新标点颜色显示（不删除其他内容）"""
+        if not self.is_enabled or not self.canvas:
             return
-        self.canvas.delete("color_tip")
-        cx = self.sw // 2
-        cy = self.sh // 2 + 280
-        self.root.after(1500, lambda: self.canvas.delete("color_tip"))
+            
+        try:
+            self._update_status_display()
+            # 强制立刻刷新画面，不等待主事件循环排队
+            if hasattr(self, 'overlay') and self.overlay:
+                self.overlay.update()
+        except Exception as e:
+            print(f"[C4助手] UI 刷新异常: {e}")
 
     def shutdown(self):
         self.thread_running = False

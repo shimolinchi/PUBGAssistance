@@ -7,14 +7,23 @@ import mss
 import json
 import os
 import ctypes
+import cv2
 from pynput.keyboard import KeyCode
 from pynput.keyboard import Controller as KeyboardController, Key
 from pynput.mouse import Controller as MouseController, Button
+
+try:
+    from PIL import Image, ImageTk
+    PIL_AVAILABLE = True
+except ImportError:
+    PIL_AVAILABLE = False
+    print("[投掷物助手] Pillow 未安装，图标将显示为文字")
 
 class ThrowablesAssistant:
     """
     PUBG 雷火闪投掷物战术助手
     包含：抬高角度指示、瞬爆圆弧刻度、以及自动瞬爆控制。
+    新增：支持 Q/E 切换标点颜色，仅使用选定颜色进行瞬爆，显示彩色图标。
     """
     def __init__(self, root, region_manager, minimap_module, elevation_module, fps=30, config_file="config.json"):
         self.root = root
@@ -39,6 +48,14 @@ class ThrowablesAssistant:
         # 瞬爆状态
         self.auto_throw_armed = False
         self.throw_timer = None
+
+        # 标点颜色切换
+        self.color_priority = ["Yellow", "Orange", "Blue", "Green"]
+        self.selected_color = "Yellow"
+
+        # 加载图标模板
+        self.color_icon_img = None
+        self._load_color_icon()
 
         # ================= 从配置读取标定数据 =================
         self.calib_dists = []
@@ -68,6 +85,33 @@ class ThrowablesAssistant:
         self.canvas = None
         self._init_overlay()
 
+    def _load_color_icon(self):
+        icon_path = "templates/pnt/0.png"
+        if os.path.exists(icon_path):
+            img = cv2.imread(icon_path, cv2.IMREAD_UNCHANGED)
+            if img is not None:
+                self.color_icon_img = img
+
+    def _get_colored_icon(self, color_name):
+        if not PIL_AVAILABLE or self.color_icon_img is None:
+            return None
+        color_map = {
+            "Yellow": (0, 215, 255),
+            "Orange": (13, 82, 179),
+            "Blue": (163, 61, 26),
+            "Green": (102, 150, 0)
+        }
+        bgr = color_map.get(color_name, (255, 255, 255))
+        bgr_img = self.color_icon_img[:, :, :3]
+        alpha = self.color_icon_img[:, :, 3]
+        color_layer = np.full_like(bgr_img, bgr, dtype=np.uint8)
+        alpha_norm = alpha / 255.0
+        result = (color_layer * alpha_norm[..., np.newaxis] + bgr_img * (1 - alpha_norm[..., np.newaxis])).astype(np.uint8)
+        result = cv2.cvtColor(result, cv2.COLOR_BGR2RGBA)
+        result[:, :, 3] = alpha
+        pil_img = Image.fromarray(result)
+        return ImageTk.PhotoImage(pil_img)
+
     def _init_overlay(self):
         self.overlay = tk.Toplevel(self.root)
         self.overlay.attributes("-fullscreen", True)
@@ -86,25 +130,6 @@ class ThrowablesAssistant:
         except Exception as e:
             print(f"[投掷物助手] 隐身 API 调用失败: {e}")
 
-        # ========== 一次性强制最高层（与其他模块一致） ==========
-        # try:
-        #     hwnd = int(self.overlay.frame(), 16)
-        #     GWLP_EXSTYLE = -20
-        #     WS_EX_TOPMOST = 0x00000008
-        #     ex_style = ctypes.windll.user32.GetWindowLongW(hwnd, GWLP_EXSTYLE)
-        #     ctypes.windll.user32.SetWindowLongW(hwnd, GWLP_EXSTYLE, ex_style | WS_EX_TOPMOST)
-
-        #     HWND_TOPMOST = -1
-        #     SWP_NOMOVE = 0x0002
-        #     SWP_NOSIZE = 0x0001
-        #     ctypes.windll.user32.SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE)
-
-        #     ctypes.windll.user32.SetForegroundWindow(hwnd)
-        #     ctypes.windll.user32.BringWindowToTop(hwnd)
-        #     ctypes.windll.user32.SetWindowDisplayAffinity(hwnd, 17)
-        # except Exception as e:
-        #     print(f"[投掷物助手] 窗口置顶失败: {e}")
-
     def enable_module(self, enabled: bool):
         self.is_enabled = enabled
         if self.is_enabled and not self._thread_running:
@@ -119,7 +144,6 @@ class ThrowablesAssistant:
                 self.throw_timer.cancel()
 
     def _show_temporary_warning(self, text, color="#E74C3C"):
-        """显示一段短暂的警告文字，2秒后自动消失"""
         warn_y = self.sh * 0.75
         self.canvas.delete("temp_warning")
         self.canvas.create_text(
@@ -131,82 +155,156 @@ class ThrowablesAssistant:
         )
         self.root.after(2000, lambda: self.canvas.delete("temp_warning"))
 
+    # ========== 颜色切换与显示 ==========
+    def on_key_press(self, key):
+        if not self.is_enabled:
+            return
+        try:
+            char = None
+            if hasattr(key, 'char') and key.char:
+                char = key.char.lower()
+            elif hasattr(key, 'vk') and key.vk is not None:
+                if key.vk == 81:
+                    char = 'q'
+                elif key.vk == 69:
+                    char = 'e'
+            if char not in ['q', 'e']:
+                return
+
+            idx = self.color_priority.index(self.selected_color)
+            if char == 'q':
+                new_idx = (idx - 1) % len(self.color_priority)
+            else:
+                new_idx = (idx + 1) % len(self.color_priority)
+            self.selected_color = self.color_priority[new_idx]
+
+            # self._show_color_change()
+        except Exception as e:
+            print(f"[投掷物助手] 颜色切换异常: {e}")
+
+    def _show_color_change(self):
+        if not self.canvas:
+            return
+        self.canvas.delete("color_tip")
+        cx = self.sw // 2
+        cy = self.sh // 2 + 100
+        color_hex = {"Yellow": "#E9E511", "Orange": "#DA6226", "Blue": "#017BC2", "Green": "#0F9D16"}
+        hex_code = color_hex.get(self.selected_color, "#FFFFFF")
+        self.canvas.create_text(cx, cy, text=f"切换到 {self.selected_color}", fill=hex_code,
+                                font=("Microsoft YaHei", 14, "bold"), tags="color_tip")
+        self.root.after(1500, lambda: self.canvas.delete("color_tip"))
+
+    def _draw_color_indicator(self):
+        """绘制当前使用的标点颜色指示器（文字+彩色图标，位于屏幕中下方偏左）"""
+        if not self.canvas:
+            return
+        # 位置：屏幕宽度 1/4 处，距离底部 80 像素
+        x = self.sw // 4
+        y = self.sh - 80
+        color_hex = {"Yellow": "#E9E511", "Orange": "#DA6226", "Blue": "#017BC2", "Green": "#0F9D16"}
+        hex_code = color_hex.get(self.selected_color, "#FFFFFF")
+
+        self.canvas.delete("color_indicator")
+        # 文字
+        self.canvas.create_text(x, y, text="当前使用标点：", fill=hex_code,
+                                font=("Microsoft YaHei", 14, "bold"), anchor="e", tags="color_indicator")
+        # 彩色图标
+        colored_icon = self._get_colored_icon(self.selected_color)
+        if colored_icon:
+            self.current_icon = colored_icon
+            self.canvas.create_image(x + 10, y, image=colored_icon, anchor="w", tags="color_indicator")
+        else:
+            # 降级：显示颜色名称
+            self.canvas.create_text(x + 10, y, text=self.selected_color, fill=hex_code,
+                                    font=("Microsoft YaHei", 12, "bold"), anchor="w", tags="color_indicator")
+
+    # ========== 瞬爆逻辑：仅使用选定颜色 ==========
     def toggle_auto_throw(self):
-        """主程序按 V 键时调用此函数：整合检测与拉环执行"""
         if not self.is_enabled:
             return
 
-        mini_dists = self.minimap.get_measured_distance()
-        valid_times = []
-        valid_dists = []
+        dist_dict = self.minimap.get_measured_distance()
+        dist = dist_dict.get(self.selected_color, 0.0)
 
-        for color, dist in mini_dists.items():
-            if dist > 0.0:
-                target_time = np.interp(dist, self.calib_dists, self.calib_times)
-                valid_times.append(target_time)
-                valid_dists.append(dist)
-
-        if len(valid_times) == 0:
-            self._show_temporary_warning("[ 未检测到有效标点 ]")
+        if dist <= 0.0:
+            self._show_temporary_warning(f"[ 未检测到 {self.selected_color} 标点 ]")
             return
 
-        avg_dist = sum(valid_dists) / len(valid_dists)
-        if avg_dist > 50.0:
-            self._show_temporary_warning(f"[ 目标距离 {avg_dist:.1f}m 太远 ]")
+        if dist > 50.0:
+            self._show_temporary_warning(f"[ 目标距离 {dist:.1f}m 太远 ]")
             return
 
-        avg_time = sum(valid_times) / len(valid_times)
-        print(f"[投掷助手] ⚡ 瞬爆启动! 目标: {avg_dist:.1f}m, 捏雷: {avg_time:.2f}s")
-        self._show_temporary_warning(f"自动瞬爆准备: {avg_dist:.1f}m", color="#2ECC71")
+        target_time = np.interp(dist, self.calib_dists, self.calib_times)
+        target_time = max(0.0, min(target_time, self.grenade_total_time))
+
+        print(f"[投掷助手] ⚡ 瞬爆启动! 标点颜色:{self.selected_color} 目标: {dist:.1f}m, 捏雷: {target_time:.2f}s")
+        self._show_temporary_warning(f"自动瞬爆: {dist:.1f}m", color="#2ECC71")
 
         # 模拟拉环（按 R）
         self.kb_controller.press(KeyCode.from_char('r'))
         time.sleep(0.01)
         self.kb_controller.release(KeyCode.from_char('r'))
 
-        # 启动计时器
         if self.throw_timer:
             self.throw_timer.cancel()
-        self.throw_timer = threading.Timer(avg_time, self._execute_throw)
+        self.throw_timer = threading.Timer(target_time, self._execute_throw)
         self.throw_timer.start()
 
     def _execute_throw(self):
-        """时间一到，通过 pynput 硬件级模拟松手动作"""
         print("[投掷助手] 💥 瞬爆时机已到，自动抛出！")
         self.kb_controller.release(Key.end)
         self.mouse_controller.release(Button.left)
 
     # ================= 核心渲染循环 =================
-    def _draw_hud(self, valid_targets):
+    def _hud_loop(self):
+        color_hex_map = {
+            "Yellow": "#E3D43C", "Orange": "#B3500D",
+            "Blue": "#1A3EA3", "Green": "#109166"
+        }
+        while self._thread_running:
+            mini_dists = self.minimap.get_measured_distance()
+            valid_targets = []
+            for color_name, dist in mini_dists.items():
+                if dist > 0.0:
+                    valid_targets.append({
+                        "dist": dist,
+                        "color": color_hex_map[color_name],
+                        "color_name": color_name
+                    })
+            self.root.after(0, self._draw_hud, valid_targets, color_hex_map)
+            time.sleep(0.03)
+
+    def _draw_hud(self, valid_targets, color_hex_map):
         self.canvas.delete("throwables_hud")
         if not self.is_enabled:
             return
 
         cx = self.sw / 2
         cy = self.sh / 2
-
-        # 垂直参考线
         bottom_y = self.sh * 0.9
         self.canvas.create_line(cx, cy, cx, bottom_y, fill="#FFFFFF", width=1, tags="throwables_hud")
 
-        # 瞬爆圆弧设定：从右下 +25° 到右上 -25°
         arc_start_deg = 25
         arc_end_deg = -25
 
         for target in valid_targets:
             dist = target['dist']
-            color = target['color']
+            color_hex = target['color']
+            color_name = target['color_name']
+            is_selected = (color_name == self.selected_color)
+            line_width = 3 if is_selected else 1
+            font_weight = "bold" if is_selected else "normal"
 
             # 抬高标尺
             elev_y = np.interp(dist, self.calib_dists, self.calib_elevations_y)
-            self.canvas.create_line(cx, elev_y, cx + 30, elev_y, fill=color, width=1, tags="throwables_hud")
-            self.canvas.create_oval(cx + 30, elev_y - 4, cx + 38, elev_y + 4, fill=color, outline="", tags="throwables_hud")
-            self.canvas.create_text(cx + 45, elev_y, text=f"{dist:.0f}m", fill=color, font=("Consolas", 12, "bold"), anchor="w", tags="throwables_hud")
+            self.canvas.create_line(cx, elev_y, cx + 30, elev_y, fill=color_hex, width=line_width, tags="throwables_hud")
+            self.canvas.create_oval(cx + 30, elev_y - 4, cx + 38, elev_y + 4, fill=color_hex, outline="", tags="throwables_hud")
+            self.canvas.create_text(cx + 45, elev_y, text=f"{dist:.0f}m", fill=color_hex,
+                                    font=("Consolas", 12, font_weight), anchor="w", tags="throwables_hud")
 
             # 圆弧瞬爆倒计时
             target_time = np.interp(dist, self.calib_dists, self.calib_times)
             target_time = max(0.0, min(target_time, self.grenade_total_time))
-
             time_ratio = target_time / self.grenade_total_time
             current_deg = arc_start_deg + time_ratio * (arc_end_deg - arc_start_deg)
             rad = math.radians(current_deg)
@@ -216,23 +314,10 @@ class ThrowablesAssistant:
             p_inner_x = cx + (self.arc_radius - 10) * math.cos(rad)
             p_inner_y = cy + (self.arc_radius - 10) * math.sin(rad)
 
-            self.canvas.create_line(p_outer_x, p_outer_y, p_inner_x, p_inner_y, fill=color, width=2, tags="throwables_hud")
+            self.canvas.create_line(p_outer_x, p_outer_y, p_inner_x, p_inner_y, fill=color_hex, width=line_width, tags="throwables_hud")
             text_x = p_outer_x + 10
-            self.canvas.create_text(text_x, p_outer_y, text=f"{target_time:.1f}s", fill=color, font=("Consolas", 12, "bold"), anchor="w", tags="throwables_hud")
+            self.canvas.create_text(text_x, p_outer_y, text=f"{target_time:.1f}s", fill=color_hex,
+                                    font=("Consolas", 12, font_weight), anchor="w", tags="throwables_hud")
 
-    def _hud_loop(self):
-        color_hex_map = {
-            "Yellow": "#E3D43C", "Orange": "#B3500D",
-            "Blue": "#1A3EA3", "Green": "#109166"
-        }
-        while self._thread_running:
-            mini_dists = self.minimap.get_measured_distance()
-            valid_targets = []
-            for color, dist in mini_dists.items():
-                if dist > 0.0:
-                    valid_targets.append({
-                        "dist": dist,
-                        "color": color_hex_map[color]
-                    })
-            self.root.after(0, self._draw_hud, valid_targets)
-            time.sleep(0.03)
+        # 绘制颜色指示器（文字+图标）
+        self._draw_color_indicator()

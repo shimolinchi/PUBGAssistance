@@ -40,7 +40,7 @@ class ElevationRadarModule:
             try:
                 with open(self.config_file, 'r', encoding='utf-8') as f:
                     config = json.load(f)
-                    self.colors = config.get("elevation_colors", self.default_colors)
+                    self.colors = config.get("pnt_colors", self.default_colors)
             except:
                 pass
 

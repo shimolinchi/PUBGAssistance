@@ -46,7 +46,7 @@ class MinimapRadarModule:
             try:
                 with open(self.config_file, 'r', encoding='utf-8') as f:
                     config_data = json.load(f)
-                    colors = config_data.get("minimap_colors", self.default_colors)
+                    colors = config_data.get("pnt_colors", self.default_colors)
             except: 
                 pass
         return colors

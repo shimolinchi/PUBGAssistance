@@ -5,7 +5,7 @@
         "width": 457,
         "height": 457
     },
-    "minimap_colors": {
+    "pnt_colors": {
         "Yellow": {
             "lower": [
                 26,
@@ -65,60 +65,6 @@
         "side": 1080
     },
     "map_1km_pixels": 540,
-    "elevation_colors": {
-        "Yellow": {
-            "lower": [
-                26,
-                150,
-                160
-            ],
-            "upper": [
-                30,
-                255,
-                255
-            ],
-            "hex": "#E3D43C"
-        },
-        "Orange": {
-            "lower": [
-                11,
-                200,
-                140
-            ],
-            "upper": [
-                13,
-                255,
-                255
-            ],
-            "hex": "#B3500D"
-        },
-        "Blue": {
-            "lower": [
-                110,
-                120,
-                120
-            ],
-            "upper": [
-                114,
-                255,
-                255
-            ],
-            "hex": "#1A3EA3"
-        },
-        "Green": {
-            "lower": [
-                76,
-                120,
-                100
-            ],
-            "upper": [
-                84,
-                255,
-                255
-            ],
-            "hex": "#109166"
-        }
-    },
     "elevation_rect": {
         "top": 80,
         "left": 912,
@@ -404,16 +350,16 @@
             "height": 59
         },
         "minimap_region": {
-            "left": 1428,
-            "top": 592,
-            "width": 459,
-            "height": 459
+            "left": 1718,
+            "top": 741,
+            "width": 638,
+            "height": 575
         },
         "largemap_region": {
-            "left": 420,
+            "left": 582,
             "top": 0,
-            "width": 1079,
-            "height": 1079
+            "width": 1499,
+            "height": 1349
         },
         "elevation_region": {
             "left": 899,
@@ -434,16 +380,16 @@
             "height": 674
         },
         "weapon1_name_region": {
-            "left": 1369,
-            "top": 94,
-            "width": 237,
-            "height": 36
+            "left": 1762,
+            "top": 115,
+            "width": 335,
+            "height": 46
         },
         "weapon1_number_region": {
-            "left": 1333,
-            "top": 93,
-            "width": 33,
-            "height": 33
+            "left": 1718,
+            "top": 116,
+            "width": 44,
+            "height": 40
         },
         "weapon1_scope_region": {
             "left": 1605,
@@ -470,16 +416,16 @@
             "height": 50
         },
         "weapon2_name_region": {
-            "left": 1369,
-            "top": 319,
-            "width": 238,
-            "height": 38
+            "left": 1762,
+            "top": 397,
+            "width": 335,
+            "height": 48
         },
         "weapon2_number_region": {
-            "left": 1333,
-            "top": 319,
-            "width": 33,
-            "height": 33
+            "left": 1718,
+            "top": 400,
+            "width": 44,
+            "height": 40
         },
         "weapon2_scope_region": {
             "left": 1605,
@@ -590,9 +536,9 @@
                 "base": 11.0,
                 "auto_fire": true,
                 "type": "ar",
-                "coeff_a": -2.0,
+                "coeff_a": -2.08,
                 "coeff_b": 14.2,
-                "coeff_c": 1.0
+                "coeff_c": 0.53
             },
             "MK47": {
                 "base": 8.0,
@@ -603,20 +549,20 @@
                 "coeff_c": 0.55
             },
             "Tommy": {
-                "base": 7.0,
+                "base": 7.15,
                 "auto_fire": false,
                 "type": "smg",
-                "coeff_a": -2.0,
-                "coeff_b": 14.2,
+                "coeff_a": -2.1,
+                "coeff_b": 14.9,
                 "coeff_c": 1.0
             },
             "UMP": {
-                "base": 7.0,
+                "base": 5.3,
                 "auto_fire": false,
                 "type": "smg",
-                "coeff_a": -2.0,
-                "coeff_b": 14.2,
-                "coeff_c": 1.0
+                "coeff_a": -1.8,
+                "coeff_b": 10.5,
+                "coeff_c": 0.4
             },
             "UZI": {
                 "base": 5.0,
@@ -651,20 +597,20 @@
                 "coeff_c": 0.6
             },
             "MP9": {
-                "base": 9.0,
+                "base": 7.8,
                 "auto_fire": false,
                 "type": "smg",
-                "coeff_a": -2.0,
-                "coeff_b": 14.2,
-                "coeff_c": 1.0
+                "coeff_a": -9.7,
+                "coeff_b": 14.5,
+                "coeff_c": 0.09
             },
             "JS9": {
-                "base": 9.0,
+                "base": 6.3,
                 "auto_fire": false,
                 "type": "smg",
-                "coeff_a": -2.0,
-                "coeff_b": 14.2,
-                "coeff_c": 1.0
+                "coeff_a": -2.4,
+                "coeff_b": 13.4,
+                "coeff_c": 0.6
             },
             "MG3": {
                 "base": 4.2,
@@ -686,7 +632,7 @@
                 "base": 9.0,
                 "auto_fire": false,
                 "type": "ar",
-                "coeff_a": -6.4,
+                "coeff_a": -6.0,
                 "coeff_b": 14.2,
                 "coeff_c": 0.5
             },
@@ -727,10 +673,26 @@
             }
         },
         "stance_multipliers": {
-            "ar": {"stand": 1.0, "squat": 0.8, "lie": 0.6},
-            "smg": {"stand": 1.0, "squat": 0.8, "lie": 0.7},
-            "lmg": {"stand": 1.0, "squat": 0.4, "lie": 0.2},
-            "dmr": {"stand": 1.0, "squat": 1.0, "lie": 1.0}
+            "ar": {
+                "stand": 1.0,
+                "squat": 0.8,
+                "lie": 0.6
+            },
+            "smg": {
+                "stand": 1.0,
+                "squat": 0.8,
+                "lie": 0.7
+            },
+            "lmg": {
+                "stand": 1.0,
+                "squat": 0.4,
+                "lie": 0.2
+            },
+            "dmr": {
+                "stand": 1.0,
+                "squat": 1.0,
+                "lie": 1.0
+            }
         },
         "scope_multipliers": {
             "holographic": 1.0,
@@ -758,7 +720,7 @@
             "dmr_sr_silencer": 1.0,
             "dmr_sr_suppressor": 0.9,
             "smg_suppressor": 0.9,
-            "smg_compensator": 0.75,
+            "smg_compensator": 0.7,
             "smg_silencer": 1.0
         },
         "stock_multipliers": {

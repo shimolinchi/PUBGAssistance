@@ -126,7 +126,7 @@ class WeaponDetectorTester:
 
     def _debug_loop(self):
         """每隔 0.2 秒截取武器区域，绘制预处理后的图像和匹配框"""
-        with mss.mss() as sct:
+        with mss.MSS() as sct:
             while self.debug_running:
                 try:
                     # 获取当前匹配位置

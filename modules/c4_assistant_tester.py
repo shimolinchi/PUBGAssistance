@@ -23,7 +23,7 @@ class C4Tester:
 
         self.c4 = C4Assistant(self.root, self.rm, self.minimap,
                               fps=30, explosion_margin=2.0, target_speed=70.0)
-        self.c4.set_enabled(True)
+        self.c4.enable_module(True)
         self.c4.c4_equipped = True
 
         self.init_ui()
