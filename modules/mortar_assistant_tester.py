@@ -119,6 +119,22 @@ class RealMortarTester:
         self.root.destroy()
 
 if __name__ == "__main__":
+    # >>> 新增：强制 Windows 启用高 DPI 感知，获取真实物理分辨率 >>>
+    import ctypes
+    import platform
+    
+    if platform.system() == "Windows":
+        try:
+            # 尝试调用 PerMonitorV2 DPI 感知 (Windows 10/11)
+            ctypes.windll.shcore.SetProcessDpiAwareness(2)
+        except Exception:
+            try:
+                # 兼容旧版本调用
+                ctypes.windll.user32.SetProcessDPIAware()
+            except Exception:
+                pass
+    # <<< 新增结束 <<<
+
     root = tk.Tk()
     app = RealMortarTester(root)
     root.mainloop()

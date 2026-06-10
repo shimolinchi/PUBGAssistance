@@ -7,6 +7,7 @@ import numpy as np
 import mss
 import threading
 import time
+from PIL import Image, ImageTk
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from pynput import keyboard
@@ -16,15 +17,15 @@ from equipment_detector import EquipmentDetector
 class EquipmentDetectorTester:
     def __init__(self, root):
         self.root = root
-        self.root.title("装备栏识别测试台（调试版）")
-        self.root.geometry("600x700")
+        self.root.title("装备栏识别测试台（增强版）")
+        self.root.geometry("750x750")
         self.root.attributes("-topmost", True)
         self.root.configure(bg="#2C3E50")
 
         self.rm = RegionManager(self.root, config_file="config.json")
         self.detector = EquipmentDetector(
             self.rm, fps=5, idle_timeout=2.0,
-            debug=True,
+            debug=False,   # 不弹出 OpenCV 窗口，由自己管理
             on_status_change=self.on_status_change
         )
         self.detector.set_enabled(True, self.on_equipment_update)
@@ -32,17 +33,15 @@ class EquipmentDetectorTester:
         self.is_open = False
         self.weapons_data = {1: {}, 2: {}}
         self.listener_running = False
-
-        self.debug_win_name = "Equipment Debug"
-        self.debug_running = False
-        self.debug_thread = None
+        self.debug_win_size = (300, 200)   # 调试窗口大小
 
         self.init_ui()
         self.start_keyboard_listener()
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
 
     def init_ui(self):
-        tk.Label(self.root, text="装备栏识别测试台（调试版）", fg="white", bg="#2C3E50",
+        # 标题
+        tk.Label(self.root, text="装备栏识别测试台（增强版）", fg="white", bg="#2C3E50",
                  font=("Microsoft YaHei", 14, "bold")).pack(pady=10)
         self.status_label = tk.Label(self.root, text="状态: 未打开装备栏", fg="#F1C40F", bg="#2C3E50",
                                      font=("Arial", 10))
@@ -51,21 +50,23 @@ class EquipmentDetectorTester:
         # 阈值调节框架
         thresh_frame = tk.LabelFrame(self.root, text="匹配阈值调节", bg="#34495E", fg="white", font=("Arial", 10, "bold"))
         thresh_frame.pack(fill="x", padx=10, pady=5)
+
         frame_name = tk.Frame(thresh_frame, bg="#34495E")
         frame_name.pack(fill="x", padx=5, pady=2)
         tk.Label(frame_name, text="武器名阈值:", bg="#34495E", fg="white").pack(side="left")
         self.name_thresh_var = tk.DoubleVar(value=0.55)
         self.name_thresh_slider = tk.Scale(frame_name, from_=0.3, to=0.9, resolution=0.01,
                                            orient=tk.HORIZONTAL, variable=self.name_thresh_var,
-                                           command=self.on_thresh_change, length=200)
+                                           command=self.on_thresh_change, length=250)
         self.name_thresh_slider.pack(side="left", padx=10)
+
         frame_attach = tk.Frame(thresh_frame, bg="#34495E")
         frame_attach.pack(fill="x", padx=5, pady=2)
         tk.Label(frame_attach, text="配件阈值:", bg="#34495E", fg="white").pack(side="left")
         self.attach_thresh_var = tk.DoubleVar(value=0.85)
         self.attach_thresh_slider = tk.Scale(frame_attach, from_=0.5, to=0.95, resolution=0.01,
                                              orient=tk.HORIZONTAL, variable=self.attach_thresh_var,
-                                             command=self.on_thresh_change, length=200)
+                                             command=self.on_thresh_change, length=250)
         self.attach_thresh_slider.pack(side="left", padx=10)
 
         # 武器1/2显示区域
@@ -78,7 +79,7 @@ class EquipmentDetectorTester:
             tk.Label(row, text=f"{label}:", width=6, anchor="w", bg="#34495E", fg="white").pack(side="left")
             var = tk.StringVar(value="未识别")
             score_var = tk.StringVar(value="")
-            tk.Label(row, textvariable=var, bg="#34495E", fg="#2ECC71", anchor="w", width=12).pack(side="left")
+            tk.Label(row, textvariable=var, bg="#34495E", fg="#2ECC71", anchor="w", width=15).pack(side="left")
             tk.Label(row, textvariable=score_var, bg="#34495E", fg="#F39C12", anchor="w", width=8).pack(side="left")
             self.weapon1_vars[label] = (var, score_var)
 
@@ -91,7 +92,7 @@ class EquipmentDetectorTester:
             tk.Label(row, text=f"{label}:", width=6, anchor="w", bg="#34495E", fg="white").pack(side="left")
             var = tk.StringVar(value="未识别")
             score_var = tk.StringVar(value="")
-            tk.Label(row, textvariable=var, bg="#34495E", fg="#2ECC71", anchor="w", width=12).pack(side="left")
+            tk.Label(row, textvariable=var, bg="#34495E", fg="#2ECC71", anchor="w", width=15).pack(side="left")
             tk.Label(row, textvariable=score_var, bg="#34495E", fg="#F39C12", anchor="w", width=8).pack(side="left")
             self.weapon2_vars[label] = (var, score_var)
 
@@ -107,13 +108,16 @@ class EquipmentDetectorTester:
         self.btn_debug = tk.Button(btn_frame, text="开启调试窗口", command=self.toggle_debug_window,
                                    bg="#8E44AD", fg="white", font=("Microsoft YaHei", 10))
         self.btn_debug.pack(side="left", padx=5)
-        # 显示匹配分数按钮（使用 TM_CCOEFF_NORMED）
         self.btn_scores = tk.Button(btn_frame, text="显示匹配分数 (CCOEFF)", command=self.show_match_scores,
                                     bg="#27AE60", fg="white", font=("Microsoft YaHei", 10))
         self.btn_scores.pack(side="left", padx=5)
 
         tk.Label(self.root, text="快捷键: Tab (全局监听) | 调试窗口按 'q' 关闭",
                  fg="#BDC3C7", bg="#2C3E50", font=("Arial", 9)).pack(pady=10)
+
+        # 调试窗口列表（用于显示实时截图）
+        self.debug_windows = {}   # region_key -> (tk.Toplevel, tk.Label)
+        self.debug_running = False
 
     def on_thresh_change(self, val):
         self.detector.thresholds["names"] = self.name_thresh_var.get()
@@ -125,85 +129,124 @@ class EquipmentDetectorTester:
     def toggle_debug_window(self):
         if not self.debug_running:
             self.debug_running = True
-            self.debug_thread = threading.Thread(target=self._debug_display_loop, daemon=True)
-            self.debug_thread.start()
+            self.create_debug_windows()
+            self.update_debug_windows_loop()
             self.btn_debug.config(text="关闭调试窗口", bg="#E74C3C")
         else:
             self.debug_running = False
-            cv2.destroyWindow(self.debug_win_name)
+            self.close_debug_windows()
             self.btn_debug.config(text="开启调试窗口", bg="#8E44AD")
 
-    def _debug_display_loop(self):
-        with mss.mss() as sct:
-            categories = {
-                "weapon1_name": "weapon1_name_region",
-                "weapon1_scope": "weapon1_scope_region",
-                "weapon1_grip": "weapon1_grip_region",
-                "weapon1_stock": "weapon1_stock_region",   # 新增
-                "weapon2_name": "weapon2_name_region",
-                "weapon2_scope": "weapon2_scope_region",
-                "weapon2_grip": "weapon2_grip_region",
-                "weapon2_stock": "weapon2_stock_region",   # 新增
-            }
-            while self.debug_running:
-                for name, region_key in categories.items():
-                    rect = self.rm.get_real_region(region_key)
-                    if not rect:
-                        continue
-                    img = sct.grab(rect)
-                    img_bgr = cv2.cvtColor(np.array(img), cv2.COLOR_BGRA2BGR)
-                    base_region = self.rm.get_templates_region(region_key)
-                    if base_region:
-                        img_resized = cv2.resize(img_bgr, (base_region["width"], base_region["height"]))
-                    else:
-                        img_resized = img_bgr
-                    cv2.imshow(f"Debug: {name}", img_resized)
-                cv2.waitKey(1)
-                time.sleep(0.1)
-            cv2.destroyAllWindows()
+    def create_debug_windows(self):
+        """为每个可能识别的区域创建一个独立窗口"""
+        region_keys = [
+            "weapon1_name_region", "weapon1_scope_region", "weapon1_grip_region",
+            "weapon1_muzzle_region", "weapon1_stock_region",
+            "weapon2_name_region", "weapon2_scope_region", "weapon2_grip_region",
+            "weapon2_muzzle_region", "weapon2_stock_region"
+        ]
+        for key in region_keys:
+            win = tk.Toplevel(self.root)
+            win.title(f"Debug: {key}")
+            win.geometry(f"{self.debug_win_size[0]}x{self.debug_win_size[1]}")
+            win.attributes("-topmost", True)
+            label = tk.Label(win, bg="black")
+            label.pack(fill=tk.BOTH, expand=True)
+            self.debug_windows[key] = (win, label)
+
+    def close_debug_windows(self):
+        for win, _ in self.debug_windows.values():
+            win.destroy()
+        self.debug_windows.clear()
+
+    def update_debug_windows_loop(self):
+        if not self.debug_running:
+            return
+        with mss.MSS() as sct:
+            for region_key, (win, label) in self.debug_windows.items():
+                rect = self.rm.get_real_region(region_key)
+                if not rect:
+                    continue
+                img = sct.grab(rect)
+                img_bgr = cv2.cvtColor(np.array(img), cv2.COLOR_BGRA2BGR)
+                # 直接显示缩放后的图像（保持比例，避免窗口过大）
+                h, w = img_bgr.shape[:2]
+                max_w, max_h = self.debug_win_size
+                scale = min(max_w/w, max_h/h)
+                new_w, new_h = int(w*scale), int(h*scale)
+                if new_w > 0 and new_h > 0:
+                    img_resized = cv2.resize(img_bgr, (new_w, new_h))
+                    img_rgb = cv2.cvtColor(img_resized, cv2.COLOR_BGR2RGB)
+                    pil_img = Image.fromarray(img_rgb)
+                    tk_img = ImageTk.PhotoImage(pil_img)
+                    label.config(image=tk_img)
+                    label.image = tk_img
+            self.root.after(100, self.update_debug_windows_loop)
 
     def show_match_scores(self):
-        """计算当前所有配件槽与所有模板的匹配分数（使用 TM_CCOEFF_NORMED）并显示在新窗口"""
+        """计算所有配件与所有模板的匹配分数（使用 TM_CCOEFF_NORMED）并显示在新窗口"""
         win = tk.Toplevel(self.root)
         win.title("模板匹配分数详情 (TM_CCOEFF_NORMED)")
-        win.geometry("600x500")
+        win.geometry("700x600")
         win.attributes("-topmost", True)
         text = tk.Text(win, wrap=tk.WORD, font=("Consolas", 10))
         text.pack(fill=tk.BOTH, expand=True)
 
-        with mss.mss() as sct:
-            slots = [
-                (1, "scope", "weapon1_scope_region", self.detector.templates["scopes"]),
-                (1, "grip", "weapon1_grip_region", self.detector.templates["grips"]),
-                (1, "muzzle", "weapon1_muzzle_region", self.detector.templates["muzzles"]),
-                (1, "stock", "weapon1_stock_region", self.detector.templates["stocks"]),
-                (2, "scope", "weapon2_scope_region", self.detector.templates["scopes"]),
-                (2, "grip", "weapon2_grip_region", self.detector.templates["grips"]),
-                (2, "muzzle", "weapon2_muzzle_region", self.detector.templates["muzzles"]),
-                (2, "stock", "weapon2_stock_region", self.detector.templates["stocks"]),
-            ]
-
-            for weapon_slot, part_name, region_key, templates_dict in slots:
-                rect = self.rm.get_real_region(region_key)
-                if not rect or not templates_dict:
+        # 需要访问检测器内部模板和缩放方法，这里手动实现一次计算
+        with mss.MSS() as sct:
+            # 武器名称区域（单独处理，因为名称缩放依赖配置）
+            for slot in [1, 2]:
+                name_region = f"weapon{slot}_name_region"
+                rect = self.rm.get_real_region(name_region)
+                if not rect:
                     continue
                 img = sct.grab(rect)
                 img_bgr = cv2.cvtColor(np.array(img), cv2.COLOR_BGRA2BGR)
-                img_resized = self.detector._resize_to_base(img_bgr, region_key)
+                # 使用检测器的方法缩放名称区域
+                img_resized = self.detector._resize_name_to_target(img_bgr, name_region)
                 if img_resized is None:
                     continue
-                text.insert(tk.END, f"\n=== 武器{weapon_slot} {part_name} ===\n")
-                for name, tpl_list in templates_dict.items():
-                    for item in tpl_list:
-                        tpl_bgr = item["bgr"]
-                        mask = item["mask"]
-                        if tpl_bgr.shape[0] > img_resized.shape[0] or tpl_bgr.shape[1] > img_resized.shape[1]:
+                text.insert(tk.END, f"\n=== 武器{slot} 名称 (区域: {name_region}) ===\n")
+                for name, tpl_list in self.detector.templates["names"].items():
+                    for tpl in tpl_list:
+                        # tpl 是灰度图
+                        if tpl.shape[0] > img_resized.shape[0] or tpl.shape[1] > img_resized.shape[1]:
                             continue
-                        # 使用 TM_CCOEFF_NORMED
-                        res = cv2.matchTemplate(img_resized, tpl_bgr, cv2.TM_CCOEFF_NORMED, mask=mask)
+                        roi_gray = cv2.cvtColor(img_resized, cv2.COLOR_BGR2GRAY)
+                        res = cv2.matchTemplate(roi_gray, tpl, cv2.TM_CCOEFF_NORMED)
                         _, max_val, _, _ = cv2.minMaxLoc(res)
                         text.insert(tk.END, f"{name}: {max_val:.3f}\n")
                 text.insert(tk.END, "-"*50 + "\n")
+
+            # 配件区域（固定 50x50）
+            part_keys = {
+                "scope": self.detector.templates["scopes"],
+                "grip": self.detector.templates["grips"],
+                "muzzle": self.detector.templates["muzzles"],
+                "stock": self.detector.templates["stocks"]
+            }
+            for slot in [1, 2]:
+                for part, templates_dict in part_keys.items():
+                    region_key = f"weapon{slot}_{part}_region"
+                    rect = self.rm.get_real_region(region_key)
+                    if not rect or not templates_dict:
+                        continue
+                    img = sct.grab(rect)
+                    img_bgr = cv2.cvtColor(np.array(img), cv2.COLOR_BGRA2BGR)
+                    # 固定缩放配件到 50x50
+                    img_resized = self.detector._resize_accessory_to_fixed(img_bgr)
+                    text.insert(tk.END, f"\n=== 武器{slot} {part} (区域: {region_key}) ===\n")
+                    for name, tpl_list in templates_dict.items():
+                        for item in tpl_list:
+                            tpl_bgr = item["bgr"]
+                            mask = item["mask"]
+                            if tpl_bgr.shape[0] > img_resized.shape[0] or tpl_bgr.shape[1] > img_resized.shape[1]:
+                                continue
+                            res = cv2.matchTemplate(img_resized, tpl_bgr, cv2.TM_CCOEFF_NORMED, mask=mask)
+                            _, max_val, _, _ = cv2.minMaxLoc(res)
+                            text.insert(tk.END, f"{name}: {max_val:.3f}\n")
+                    text.insert(tk.END, "-"*50 + "\n")
+
             text.insert(tk.END, "\n说明：分数为 TM_CCOEFF_NORMED 匹配结果，越接近1越相似。")
 
     def on_equipment_update(self, is_open, weapons):
@@ -280,7 +323,7 @@ class EquipmentDetectorTester:
             "weapon2_name_region", "weapon2_scope_region", "weapon2_grip_region",
             "weapon2_muzzle_region", "weapon2_stock_region"
         ]
-        with mss.mss() as sct:
+        with mss.MSS() as sct:
             for reg in regions:
                 rect = self.rm.get_real_region(reg)
                 if rect:
@@ -294,7 +337,7 @@ class EquipmentDetectorTester:
             self.keyboard_listener.stop()
         self.detector.set_enabled(False)
         self.debug_running = False
-        cv2.destroyAllWindows()
+        self.close_debug_windows()
         self.root.destroy()
 
 if __name__ == "__main__":

@@ -1,19 +1,13 @@
-# weapon_detector.py
 import cv2
 import os
 import numpy as np
 import mss
 import threading
 import time
-from typing import Optional, Callable, List
+import json
+from typing import Optional, Callable
 
 class WeaponDetector:
-    """
-    当前手持武器检测模块
-    维护两个主武器名称（由装备栏模块更新），实时识别手持武器并回调。
-    增加防抖：连续两帧识别到同一武器才更新。
-    """
-
     def __init__(self, region_manager, templates_dir="templates/weapons",
                  fps=30, match_threshold=0.55, debug=False):
         self.rm = region_manager
@@ -22,12 +16,21 @@ class WeaponDetector:
         self.match_threshold = match_threshold
         self.debug = debug
 
-        # 主武器列表
         self.primary_weapons = [None, None]
-        self.special_weapons = ["Rocket", "Grenade", "VSS", "Crossbow","C4"]
+        self.special_weapons = ["Rocket", "Grenade", "VSS", "Crossbow", "C4"]
 
+        # 先加载模板（获取模板尺寸）
         self.templates = {}
         self._load_templates()
+
+        # 再读取配置（可能会覆盖目标尺寸）
+        self.target_width = 160
+        self.target_height = 50
+        self._load_match_target_size()
+        print(f"[武器检测] 使用缩放目标尺寸: {self.target_width}x{self.target_height}")
+
+        self.last_best_score = 0.0
+        self.last_best_weapon = None
 
         self._enabled = False
         self._thread = None
@@ -38,10 +41,31 @@ class WeaponDetector:
         self.current_score = 0.0
         self.last_match_location = None
 
-        # 防抖相关
         self.pending_weapon = None
         self.pending_counter = 0
         self.pending_score = 0.0
+
+    def _load_match_target_size(self):
+        """从 config.json 读取 region_scaling_settings 中 weapon_region 的缩放目标尺寸"""
+        config_file = "config.json"
+        if os.path.exists(config_file):
+            try:
+                with open(config_file, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+                    scaling = config.get("region_scaling_settings", {})
+                    if "weapon_region" in scaling:
+                        self.target_width = scaling["weapon_region"].get("width", self.target_width)
+                        self.target_height = scaling["weapon_region"].get("height", self.target_height)
+                        print(f"[武器检测] 从 region_scaling_settings 加载缩放尺寸: {self.target_width}x{self.target_height}")
+                        return
+                    ws = config.get("weapon_match_settings", {})
+                    if "target_width" in ws and "target_height" in ws:
+                        self.target_width = ws["target_width"]
+                        self.target_height = ws["target_height"]
+                        print(f"[武器检测] 从 weapon_match_settings 加载缩放尺寸: {self.target_width}x{self.target_height}")
+                        return
+            except Exception as e:
+                print(f"[武器检测] 读取缩放配置失败: {e}")
 
     def set_enabled(self, enabled: bool, callback: Optional[Callable] = None):
         self._enabled = enabled
@@ -66,24 +90,20 @@ class WeaponDetector:
                 start = time.time()
                 weapon, score = self._identify_weapon(sct)
 
-                # 防抖逻辑
                 if weapon is not None and score >= self.match_threshold:
                     if self.pending_weapon == weapon:
                         self.pending_counter += 1
                         if self.pending_counter >= 2:
-                            # 连续两帧识别到相同武器，确认切换
                             if self.current_weapon != weapon:
                                 self.current_weapon = weapon
                                 self.current_score = score
                                 if self._callback:
                                     self._callback(weapon, score)
                     else:
-                        # 新候选，重置计数器
                         self.pending_weapon = weapon
                         self.pending_score = score
                         self.pending_counter = 1
                 else:
-                    # 未识别到武器，重置防抖状态
                     self.pending_weapon = None
                     self.pending_counter = 0
                     if self.current_weapon is not None:
@@ -96,7 +116,6 @@ class WeaponDetector:
                 sleep = max(0, (1.0 / self.fps) - elapsed)
                 time.sleep(sleep)
 
-    # ================= 图像预处理 =================
     def _preprocess_image(self, img_bgr):
         gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
         blurred = cv2.GaussianBlur(gray, (3, 3), 0)
@@ -105,72 +124,67 @@ class WeaponDetector:
         edges_dilated = cv2.dilate(edges, kernel, iterations=1)
         return edges_dilated
 
-    # ================= 加载模板 =================
     def _load_templates(self):
         print(f"[武器检测] 正在从 {self.templates_dir} 加载武器模板...")
-        weapon_region = self.rm.get_templates_region("weapon_region")
-        if not weapon_region or not os.path.exists(self.templates_dir):
-            print("[武器检测] 警告: 标定区域或模板目录不存在！")
+        if not os.path.exists(self.templates_dir):
+            print("[武器检测] 警告: 模板目录不存在！")
             return
 
+        first_template_size_set = False
         for weapon_name in os.listdir(self.templates_dir):
             weapon_path = os.path.join(self.templates_dir, weapon_name)
-            if os.path.isdir(weapon_path):
-                self.templates[weapon_name] = []
-                for filename in os.listdir(weapon_path):
-                    if not filename.lower().endswith(".png"):
-                        continue
-                    file_path = os.path.join(weapon_path, filename)
-                    img = cv2.imread(file_path, cv2.IMREAD_COLOR)
-                    if img is None:
-                        continue
-                    # 裁切模板
-                    h, w = img.shape[:2]
-                    if h > weapon_region["height"] and w > weapon_region["width"]:
-                        top, left = weapon_region["top"], weapon_region["left"]
-                        bottom, right = top + weapon_region["height"], left + weapon_region["width"]
-                        if bottom <= h and right <= w:
-                            cropped = img[top:bottom, left:right]
-                        else:
-                            cropped = img
-                    else:
-                        cropped = img
+            if not os.path.isdir(weapon_path):
+                continue
+            self.templates[weapon_name] = []
+            for filename in os.listdir(weapon_path):
+                if not filename.lower().endswith(".png"):
+                    continue
+                file_path = os.path.join(weapon_path, filename)
+                img_full = cv2.imread(file_path, cv2.IMREAD_COLOR)
+                if img_full is None:
+                    continue
+                # 模板保持原始尺寸
+                processed_tpl = self._preprocess_image(img_full)
+                # 记录第一个模板的尺寸作为默认目标尺寸（如果尚未设置）
+                if not first_template_size_set:
+                    self.target_width = processed_tpl.shape[1]
+                    self.target_height = processed_tpl.shape[0]
+                    first_template_size_set = True
+                    print(f"[武器检测] 根据模板尺寸设置默认目标尺寸: {self.target_width}x{self.target_height}")
 
-                    processed_tpl = self._preprocess_image(cropped)
-                    mask_kernel = np.ones((5, 5), np.uint8)
-                    mask = cv2.dilate(processed_tpl, mask_kernel, iterations=1)
-                    if cv2.countNonZero(mask) == 0:
-                        continue
-
-                    inner_mask = np.zeros_like(processed_tpl, dtype=np.uint8)
-                    contours, _ = cv2.findContours(processed_tpl, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-                    if contours:
-                        cnt = max(contours, key=cv2.contourArea)
-                        cv2.drawContours(inner_mask, [cnt], -1, 255, -1)
-                        inner_mask = cv2.erode(inner_mask, np.ones((2,2), np.uint8), iterations=1)
-                    else:
-                        inner_mask = np.ones_like(processed_tpl, dtype=np.uint8) * 255
-
-                    if cv2.countNonZero(processed_tpl) > 5:
-                        self.templates[weapon_name].append({
-                            "tpl": processed_tpl,
-                            "mask": mask,
-                            "inner_mask": inner_mask
-                        })
-                print(f"  - {weapon_name}: 加载了 {len(self.templates[weapon_name])} 个模板")
+                mask_kernel = np.ones((5, 5), np.uint8)
+                mask = cv2.dilate(processed_tpl, mask_kernel, iterations=1)
+                if cv2.countNonZero(mask) == 0:
+                    continue
+                inner_mask = np.zeros_like(processed_tpl, dtype=np.uint8)
+                contours, _ = cv2.findContours(processed_tpl, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                if contours:
+                    cnt = max(contours, key=cv2.contourArea)
+                    cv2.drawContours(inner_mask, [cnt], -1, 255, -1)
+                    inner_mask = cv2.erode(inner_mask, np.ones((2,2), np.uint8), iterations=1)
+                else:
+                    inner_mask = np.ones_like(processed_tpl, dtype=np.uint8) * 255
+                self.templates[weapon_name].append({
+                    "tpl": processed_tpl,
+                    "mask": mask,
+                    "inner_mask": inner_mask
+                })
+            print(f"  - {weapon_name}: 加载了 {len(self.templates[weapon_name])} 个模板")
         print("[武器检测] 模板加载完毕。")
 
-    # ================= 核心识别 =================
-    def _identify_weapon(self, sct: mss.mss):
+    def _identify_weapon(self, sct):
         weapon_region_real = self.rm.get_real_region("weapon_region")
-        weapon_region_base = self.rm.get_templates_region("weapon_region")
         if not weapon_region_real or not self.templates:
             return None, 0.0
 
         try:
             screenshot = sct.grab(weapon_region_real)
             img_bgr = cv2.cvtColor(np.array(screenshot), cv2.COLOR_BGRA2BGR)
-            img_bgr = cv2.resize(img_bgr, (weapon_region_base["width"], weapon_region_base["height"]))
+
+            # 缩放到目标尺寸
+            if img_bgr.shape[1] != self.target_width or img_bgr.shape[0] != self.target_height:
+                img_bgr = cv2.resize(img_bgr, (self.target_width, self.target_height))
+
             current_img = self._preprocess_image(img_bgr)
             if cv2.countNonZero(current_img) < 5:
                 return None, 0.0
@@ -187,20 +201,25 @@ class WeaponDetector:
 
             best_match_weapon = None
             best_match_score = 0.0
+            self.last_match_location = None
+
             for weapon_name in candidates:
                 for item in self.templates[weapon_name]:
                     tpl = item["tpl"]
                     mask = item["mask"]
-                    h_tpl, w_tpl = tpl.shape[:2]
-                    if h_tpl > current_img.shape[0] or w_tpl > current_img.shape[1]:
+                    if tpl.shape[0] > current_img.shape[0] or tpl.shape[1] > current_img.shape[1]:
                         continue
                     res = cv2.matchTemplate(current_img, tpl, cv2.TM_CCORR_NORMED, mask=mask)
-                    _, max_val, _, _ = cv2.minMaxLoc(res)
-                    if np.isinf(max_val) or np.isnan(max_val):
+                    _, max_val, _, max_loc = cv2.minMaxLoc(res)
+                    if not np.isfinite(max_val):
                         max_val = 0.0
                     if max_val > best_match_score:
                         best_match_score = max_val
                         best_match_weapon = weapon_name
+                        self.last_match_location = (max_loc[0], max_loc[1], tpl.shape[1], tpl.shape[0])
+
+            self.last_best_weapon = best_match_weapon
+            self.last_best_score = best_match_score
 
             if best_match_weapon is not None:
                 threshold = 0.6 if best_match_weapon == "Grenade" else self.match_threshold
@@ -219,3 +238,6 @@ class WeaponDetector:
 
     def get_last_match_location(self):
         return self.last_match_location
+
+    def get_last_best_match(self):
+        return self.last_best_weapon, self.last_best_score

@@ -16,7 +16,7 @@ class WeaponDetectorTester:
     def __init__(self, root):
         self.root = root
         self.root.title("武器检测测试台")
-        self.root.geometry("400x350")
+        self.root.geometry("420x400")
         self.root.attributes("-topmost", True)
         self.root.configure(bg="#2C3E50")
 
@@ -30,6 +30,7 @@ class WeaponDetectorTester:
         self.debug_win_name = "Weapon Detection Debug"
         self.debug_running = False
         self.debug_thread = None
+        self.update_timer = None   # 用于定时更新匹配分数
 
         self.init_ui()
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
@@ -76,12 +77,18 @@ class WeaponDetectorTester:
                                     bg="#2ECC71", fg="white", font=("Microsoft YaHei", 10, "bold"))
         self.btn_toggle.pack(pady=10)
 
+        # 当前武器显示
         self.result_label = tk.Label(self.root, text="当前武器: 未识别", fg="#F1C40F", bg="#2C3E50",
                                      font=("Microsoft YaHei", 12, "bold"))
         self.result_label.pack(pady=5)
         self.score_label = tk.Label(self.root, text="置信度: --", fg="#BDC3C7", bg="#2C3E50",
                                     font=("Arial", 10))
         self.score_label.pack(pady=5)
+
+        # 新增：最佳匹配分数（未过阈值也会显示）
+        self.best_match_label = tk.Label(self.root, text="最佳匹配分数: --", fg="#F39C12", bg="#2C3E50",
+                                         font=("Arial", 10))
+        self.best_match_label.pack(pady=5)
 
         tk.Label(self.root, text="请确保游戏中已装备主武器，并校准好 weapon_region",
                  fg="#95A5A6", bg="#2C3E50", font=("Arial", 8)).pack(pady=10)
@@ -96,23 +103,43 @@ class WeaponDetectorTester:
 
     def toggle_detection(self):
         if not self.detecting:
+            weapon_region = self.rm.get_real_region("weapon_region")
+            print(f"[测试] 武器区域实际坐标: {weapon_region}")
+            print(f"[测试] 当前缩放目标尺寸: {self.detector.target_width}x{self.detector.target_height}")
+
             self.detector.set_enabled(True, self.on_weapon_detected)
             self.detecting = True
             self.btn_toggle.config(text="停止检测", bg="#E74C3C")
-            # 启动调试显示线程
             self.debug_running = True
             self.debug_thread = threading.Thread(target=self._debug_loop, daemon=True)
             self.debug_thread.start()
+            # 启动定时器每 0.2 秒更新最佳匹配分数
+            self._schedule_match_update()
         else:
             self.detector.set_enabled(False)
             self.detecting = False
             self.btn_toggle.config(text="启动检测", bg="#2ECC71")
             self.result_label.config(text="当前武器: 未识别", fg="#F1C40F")
             self.score_label.config(text="置信度: --")
+            self.best_match_label.config(text="最佳匹配分数: --")
             self.debug_running = False
             if self.debug_thread:
                 self.debug_thread.join(timeout=0.5)
             cv2.destroyWindow(self.debug_win_name)
+            if self.update_timer:
+                self.root.after_cancel(self.update_timer)
+                self.update_timer = None
+
+    def _schedule_match_update(self):
+        if not self.detecting:
+            return
+        # 获取最近一次匹配的最佳分数
+        best_weapon, best_score = self.detector.get_last_best_match()
+        if best_weapon:
+            self.best_match_label.config(text=f"最佳匹配: {best_weapon} ({best_score:.3f})")
+        else:
+            self.best_match_label.config(text=f"最佳匹配分数: {best_score:.3f}")
+        self.update_timer = self.root.after(200, self._schedule_match_update)
 
     def on_weapon_detected(self, weapon_name, score):
         def update():
@@ -125,32 +152,29 @@ class WeaponDetectorTester:
         self.root.after(0, update)
 
     def _debug_loop(self):
-        """每隔 0.2 秒截取武器区域，绘制预处理后的图像和匹配框"""
-        with mss.MSS() as sct:
+        with mss.mss() as sct:
             while self.debug_running:
                 try:
-                    # 获取当前匹配位置
                     loc = self.detector.get_last_match_location()
-                    # 获取武器区域原图
                     weapon_region = self.rm.get_real_region("weapon_region")
                     if not weapon_region:
                         time.sleep(0.2)
                         continue
                     screenshot = sct.grab(weapon_region)
                     img_bgr = cv2.cvtColor(np.array(screenshot), cv2.COLOR_BGRA2BGR)
-                    # 缩放到模板基准大小
-                    base_region = self.rm.get_templates_region("weapon_region")
-                    if base_region:
-                        img_bgr = cv2.resize(img_bgr, (base_region["width"], base_region["height"]))
-                    # 预处理图像
+
+                    target_w = self.detector.target_width
+                    target_h = self.detector.target_height
+                    if img_bgr.shape[1] != target_w or img_bgr.shape[0] != target_h:
+                        img_bgr = cv2.resize(img_bgr, (target_w, target_h))
+
                     processed = self.detector._preprocess_image(img_bgr)
-                    # 转为彩色用于显示
                     processed_color = cv2.cvtColor(processed, cv2.COLOR_GRAY2BGR)
-                    # 如果有匹配位置，画矩形
+
                     if loc is not None:
                         x, y, w, h = loc
                         cv2.rectangle(processed_color, (x, y), (x+w, y+h), (0, 0, 255), 2)
-                    # 显示
+
                     cv2.imshow(self.debug_win_name, processed_color)
                     cv2.waitKey(1)
                 except Exception as e:
@@ -161,6 +185,8 @@ class WeaponDetectorTester:
         self.detector.set_enabled(False)
         self.debug_running = False
         cv2.destroyAllWindows()
+        if self.update_timer:
+            self.root.after_cancel(self.update_timer)
         self.root.destroy()
 
 if __name__ == "__main__":

@@ -18,8 +18,9 @@ class MortarAssistant:
         self.elevation = elevation_module
         self.fps = fps
 
-        self.screen_width = self.root.winfo_screenwidth()
-        self.screen_height = self.root.winfo_screenheight()
+        self.screen_width = self.region_manager.real_w
+        self.screen_height = self.region_manager.real_h
+        print(f"[迫击炮] 物理分辨率: {self.screen_width}x{self.screen_height}")
 
         self.is_enabled = False
         self._thread_running = False
@@ -33,6 +34,8 @@ class MortarAssistant:
         self.fpp_ratios = []
         self.tpp_dists = []
         self.tpp_ratios = []
+
+        self.y_spacer = 30
 
         if os.path.exists(config_file):
             try:
@@ -75,6 +78,9 @@ class MortarAssistant:
         self.overlay.attributes("-topmost", True)
         self.overlay.attributes("-transparentcolor", "black")
         self.overlay.overrideredirect(True)
+
+        # 强制设置窗口大小为物理分辨率，防止仅显示 1920×1080 区域
+        self.overlay.geometry(f"{self.region_manager.real_w}x{self.region_manager.real_h}+0+0")
 
         self.canvas = tk.Canvas(self.overlay, bg="black", highlightthickness=0)
         self.canvas.pack(fill=tk.BOTH, expand=True)
@@ -167,24 +173,32 @@ class MortarAssistant:
             valid_colors = {color: (dist > 0.0) for color, dist in mini_dists.items()}
             self.elevation.set_valid_colors(valid_colors)
 
-
-            # 计算 HUD 面板位置（小地图上方）
+            # 获取小地图实际区域，动态计算HUD位置
             minimap_rect = self.region_manager.get_real_region("minimap_region")
             if minimap_rect:
-                panel_width = minimap_rect["width"]
                 panel_height = 50
+                spacing = 10                     # 卡片之间的间距
+                total_spacing = 3 * spacing
+                box_width = (minimap_rect["width"] - total_spacing) // 4
                 panel_x = minimap_rect["left"]
-                panel_y = minimap_rect["top"] - panel_height - 5
+                large_map_y = minimap_rect["top"] - panel_height - spacing - panel_height - self.y_spacer
+                panel_y = large_map_y + panel_height + spacing
                 if panel_y < 0:
                     panel_y = 0
-                box_width = panel_width // 4
+                self.hud_position = (panel_x, panel_y, box_width, panel_height, spacing)
             else:
-                # 回退位置
+                # 回退位置（基于物理分辨率）
                 box_w, box_h, spacing = 105, 50, 15
                 total_width = 4 * box_w + 3 * spacing
-                panel_x = self.screen_width - total_width - 25
-                panel_y = self.screen_height * 0.465
-                box_width = box_w
+                # 使用 self.screen_width/height（已在 __init__ 中设为物理分辨率）
+                start_x = self.screen_width - total_width - 25
+                start_y = self.screen_height * 0.465
+                # 确保坐标在物理分辨率范围内
+                if start_x < 0:
+                    start_x = 0
+                if start_y + box_h > self.screen_height:
+                    start_y = self.screen_height - box_h - 5
+                self.hud_position = (start_x, start_y, box_w, box_h, spacing)
 
             hud_data = []
             for color_name, base_hex in self.color_map.items():
@@ -207,7 +221,6 @@ class MortarAssistant:
 
                 hud_data.append((text, bg_color))
 
-            # self.root.after(0, self._render_hud, panel_x, panel_y, box_width, panel_height, hud_data)
             self.root.after(0, self._render_hud, hud_data)
 
             elapsed = time.time() - start_time
@@ -230,15 +243,9 @@ class MortarAssistant:
         if not self._thread_running or not self.is_enabled:
             return
 
-        box_w, box_h, spacing = 105, 50, 15
-        total_width = 4 * box_w + 3 * spacing
-        
-        # X坐标起点，与大地图模块完全一致
-        start_x = self.screen_width - total_width - 25
-        
-        # Y坐标起点，在大地图模块正下方
-        # 大地图是 self.sh * 0.465 - box_h - 15，这里刚好衔接
-        start_y = self.screen_height * 0.465 
+        if not hasattr(self, 'hud_position'):
+            return
+        start_x, start_y, box_w, box_h, spacing = self.hud_position
 
         for i, (text, bg_color) in enumerate(data):
             x1 = start_x + i * (box_w + spacing)
@@ -246,15 +253,11 @@ class MortarAssistant:
             x2 = x1 + box_w
             y2 = y1 + box_h
 
-            # 绘制完全相同的 15px 圆角矩形
             self._draw_rounded_rect(x1, y1, x2, y2, radius=15, fill=bg_color, tags="hud")
-            
-            # 判断字体颜色和大小（未获取到距离时灰色，获取到时白色）
-            font_size = 14 if text != "---" and "距离过近" not in text else 12
-            text_color = "#FFFFFF" if text != "---" else "#7F8C8D"
-            
-            self.canvas.create_text(x1 + box_w/2, y1 + box_h/2, 
-                                    text=text, 
-                                    fill=text_color, 
-                                    font=("Microsoft YaHei", font_size, "bold"), 
+            font_size = 14 if text != "无标点" and "距离过近" not in text else 12
+            text_color = "#FFFFFF" if text != "无标点" else "#7F8C8D"
+            self.canvas.create_text(x1 + box_w/2, y1 + box_h/2,
+                                    text=text,
+                                    fill=text_color,
+                                    font=("Microsoft YaHei", font_size, "bold"),
                                     tags="hud")

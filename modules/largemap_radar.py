@@ -17,15 +17,20 @@ class AutoMapDistanceAssistant:
         self.config_file = config_file
 
         # 获取屏幕尺寸
-        self.sw = self.root.winfo_screenwidth()
-        self.sh = self.root.winfo_screenheight()
+        self.sw = self.region_manager.real_w
+        self.sh = self.region_manager.real_h
 
         # 从 RegionManager 获取大地图区域和比例尺
         self.map_rect = self.region_manager.get_real_region("largemap_region")
         self.map_1km_pixels = self.region_manager.get_real_scale("largemap_1km_px") or 540.0
 
-        # 颜色配置（与小地图共用 minimap_colors）
-        self.colors = self.region_manager.get_templates_region("minimap_colors")  # 注意：RegionManager 中没有此方法，需直接读取 config
+        # 颜色配置（与小地图共用 pnt_colors）
+        self.colors = {
+            "Yellow": {"bgr": (0, 215, 255), "hex": "#E3D43C"},
+            "Orange": {"bgr": (13, 82, 179), "hex": "#B3500D"},
+            "Blue": {"bgr": (163, 61, 26), "hex": "#1A3EA3"},
+            "Green": {"bgr": (102, 150, 0), "hex": "#109166"}
+        }
         # 替代方案：从 region_manager 内部配置获取，但 region_manager 只提供了 detection_regions 和 map_scales
         # 我们仍从 config.json 读取颜色，或者从 region_manager 中暴露颜色配置。为了简洁，直接从原 config_file 读取颜色部分
         self._load_colors_from_config()
@@ -43,15 +48,16 @@ class AutoMapDistanceAssistant:
 
         self.overlay = None
         self.canvas = None
+        self.y_spacer = 30
         self._init_overlay()
 
     def _load_colors_from_config(self):
-        """从 config.json 加载 minimap_colors（与 RegionManager 保持一致）"""
+        """从 config.json 加载 pnt_colors（与 RegionManager 保持一致）"""
         if os.path.exists(self.config_file):
             try:
                 with open(self.config_file, 'r', encoding='utf-8') as f:
                     config = json.load(f)
-                    self.colors = config.get("minimap_colors", {})
+                    self.colors = config.get("pnt_colors", {})
             except:
                 self.colors = {}
 
@@ -61,6 +67,9 @@ class AutoMapDistanceAssistant:
         self.overlay.attributes("-topmost", True)
         self.overlay.attributes("-transparentcolor", "black")
         self.overlay.overrideredirect(True)
+
+        # 强制设置窗口大小为物理分辨率，防止仅显示 1920×1080 区域
+        self.overlay.geometry(f"{self.region_manager.real_w}x{self.region_manager.real_h}+0+0")
 
         self.canvas = tk.Canvas(self.overlay, bg="black", highlightthickness=0)
         self.canvas.pack(fill=tk.BOTH, expand=True)
@@ -227,33 +236,75 @@ class AutoMapDistanceAssistant:
 
     def _update_wait_ui(self):
         self.canvas.delete("all")
-        box_w, box_h = 240, 45
-        mortar_total_width = 465
-        start_x = self.sw - mortar_total_width - 25
-        x1 = start_x + (mortar_total_width - box_w) / 2
-        y1 = self.sh * 0.465 - box_h - 15
-        self._draw_rounded_rect(x1, y1, x1+box_w, y1+box_h, radius=12, fill="#2980B9", tags="hud")
-        self.canvas.create_text(x1 + box_w/2, y1 + box_h/2, text="请左键点击你的当前位置", fill="#FFFFFF", font=("Microsoft YaHei", 12, "bold"), tags="hud")
+        minimap_rect = self.region_manager.get_real_region("minimap_region")
+        if minimap_rect:
+            panel_height = 50
+            spacing = 10
+            # 提示框放在大地图测距位置（最上方）
+            panel_y = minimap_rect["top"] - panel_height - spacing - panel_height - self.y_spacer
+            if panel_y < 0:
+                panel_y = 0
+            box_w = 240
+            x1 = minimap_rect["left"] + (minimap_rect["width"] - box_w) // 2
+            y1 = panel_y
+        else:
+            box_w, box_h = 240, 45
+            mortar_total_width = 465
+            start_x = self.sw - mortar_total_width - 25
+            x1 = start_x + (mortar_total_width - box_w) // 2
+            y1 = self.sh * 0.465 - box_h - 15
+
+        self._draw_rounded_rect(x1, y1, x1+box_w, y1+45, radius=12, fill="#2980B9", tags="hud")
+        self.canvas.create_text(x1 + box_w/2, y1 + 22.5, text="请左键点击你的当前位置", fill="#FFFFFF", font=("Microsoft YaHei", 12, "bold"), tags="hud")
 
     def _update_calc_ui(self):
         self.canvas.delete("all")
-        box_w, box_h = 240, 45
-        mortar_total_width = 465
-        start_x = self.sw - mortar_total_width - 25
-        x1 = start_x + (mortar_total_width - box_w) / 2
-        y1 = self.sh * 0.465 - box_h - 15
-        self._draw_rounded_rect(x1, y1, x1+box_w, y1+box_h, radius=12, fill="#E67E22", tags="hud")
-        self.canvas.create_text(x1 + box_w/2, y1 + box_h/2, text="正在寻找目标...", fill="#FFFFFF", font=("Microsoft YaHei", 12, "bold"), tags="hud")
+        minimap_rect = self.region_manager.get_real_region("minimap_region")
+        if minimap_rect:
+            panel_height = 50
+            spacing = 10
+            panel_y = minimap_rect["top"] - panel_height - spacing - panel_height - self.y_spacer
+            if panel_y < 0:
+                panel_y = 0
+            box_w = 240
+            x1 = minimap_rect["left"] + (minimap_rect["width"] - box_w) // 2
+            y1 = panel_y
+        else:
+            box_w, box_h = 240, 45
+            mortar_total_width = 465
+            start_x = self.sw - mortar_total_width - 25
+            x1 = start_x + (mortar_total_width - box_w) // 2
+            y1 = self.sh * 0.465 - box_h - 15
+
+        self._draw_rounded_rect(x1, y1, x1+box_w, y1+45, radius=12, fill="#E67E22", tags="hud")
+        self.canvas.create_text(x1 + box_w/2, y1 + 22.5, text="正在寻找目标...", fill="#FFFFFF", font=("Microsoft YaHei", 12, "bold"), tags="hud")
 
     def _render_auto_hud(self):
         self.canvas.delete("all")
         if not self.show_display:
             return
 
-        box_w, box_h, spacing = 105, 50, 15
-        total_width = 4 * box_w + 3 * spacing
-        start_x = self.sw - total_width - 25
-        start_y = self.sh * 0.465 - box_h - 15
+        minimap_rect = self.region_manager.get_real_region("minimap_region")
+        if minimap_rect:
+            panel_height = 50
+            spacing = 10                     # 卡片之间的间距（增大）
+            total_spacing = 3 * spacing
+            box_width = (minimap_rect["width"] - total_spacing) // 4
+            panel_x = minimap_rect["left"]
+            # 大地图测距放在最上方，紧贴小地图上方（间隔 spacing）
+            panel_y = minimap_rect["top"] - panel_height - spacing - panel_height - self.y_spacer
+            if panel_y < 0:
+                panel_y = 0
+            start_x = panel_x
+            start_y = panel_y
+        else:
+            # 回退位置
+            box_w, box_h, spacing = 105, 50, 15
+            total_width = 4 * box_w + 3 * spacing
+            start_x = self.sw - total_width - 25
+            start_y = self.sh * 0.465
+            box_width = box_w
+            spacing = 15
 
         for i, color_name in enumerate(self.color_order):
             dist = self.last_measured_dists.get(color_name)
@@ -266,12 +317,12 @@ class AutoMapDistanceAssistant:
                 bg_color = self._dim_color(base_hex, 0.2)
                 text = "---"
 
-            x1 = start_x + i * (box_w + spacing)
+            x1 = start_x + i * (box_width + spacing)
             y1 = start_y
-            x2 = x1 + box_w
-            y2 = y1 + box_h
+            x2 = x1 + box_width
+            y2 = y1 + 50
 
             self._draw_rounded_rect(x1, y1, x2, y2, radius=15, fill=bg_color, tags="hud")
             font_size = 14 if dist is not None else 12
             text_color = "#FFFFFF" if dist is not None else "#7F8C8D"
-            self.canvas.create_text(x1 + box_w/2, y1 + box_h/2, text=text, fill=text_color, font=("Microsoft YaHei", font_size, "bold"), tags="hud")
+            self.canvas.create_text(x1 + box_width/2, y1 + 25, text=text, fill=text_color, font=("Microsoft YaHei", font_size, "bold"), tags="hud")

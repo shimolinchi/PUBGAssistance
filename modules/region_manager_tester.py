@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import ttk
 import sys
 import os
+import ctypes
 
 # 确保能导入 region_manager
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -22,7 +23,7 @@ class RegionManagerTester:
         info_frame = tk.LabelFrame(self.root, text="屏幕信息", bg="#34495E", fg="white", font=("Arial", 10, "bold"))
         info_frame.pack(fill="x", padx=10, pady=10)
         tk.Label(info_frame, text=f"实际分辨率: {self.rm.real_w} x {self.rm.real_h}", bg="#34495E", fg="white").pack(anchor="w", padx=5, pady=2)
-        tk.Label(info_frame, text=f"缩放比例: X={self.rm.scale_x:.3f}, Y={self.rm.scale_y:.3f}", bg="#34495E", fg="white").pack(anchor="w", padx=5, pady=2)
+        tk.Label(info_frame, text=f"模板分辨率: 1920 x 1080 (固定)", bg="#34495E", fg="white").pack(anchor="w", padx=5, pady=2)
 
         # 调试模式开关按钮
         self.debug_btn = tk.Button(self.root, text="🟢 显示调试覆盖层 (OFF)", command=self.toggle_debug,
@@ -138,11 +139,8 @@ class RegionManagerTester:
         """启动区域校准，并在状态栏提示"""
         self.status_var.set(f"正在校准 {region_name}，请在屏幕上框选区域...")
         self.root.update()
-        # RegionManager.calibrate_region 会弹出半透明全屏窗口进行框选
         self.rm.calibrate_region(region_name)
         self.status_var.set(f"✓ {region_name} 校准完成 (已保存到 config.json)")
-        # 刷新按钮上的状态标签（简单起见，可以重新构建界面或更新标签）
-        # 为了简化，我们直接重建两个框架（简易刷新）
         self.refresh_ui()
 
     def calibrate_scale(self, scale_name):
@@ -155,12 +153,10 @@ class RegionManagerTester:
 
     def refresh_ui(self):
         """刷新按钮状态（重新读取区域和比例尺）"""
-        # 清除现有框架内容
         for widget in self.region_frame.winfo_children():
             widget.destroy()
         for widget in self.scale_frame.winfo_children():
             widget.destroy()
-        # 重新构建
         self._build_region_buttons()
         self._build_scale_buttons()
 
@@ -170,6 +166,11 @@ class RegionManagerTester:
         self.root.destroy()
 
 if __name__ == "__main__":
+    # 设置 DPI 感知，获取真实物理分辨率
+    try:
+        ctypes.windll.user32.SetProcessDPIAware()
+    except:
+        pass
     root = tk.Tk()
     app = RegionManagerTester(root)
     root.protocol("WM_DELETE_WINDOW", app.on_closing)

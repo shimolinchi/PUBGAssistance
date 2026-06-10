@@ -4,11 +4,15 @@ import numpy as np
 import mss
 import threading
 import time
+import json
 from typing import Optional, Callable, Dict
 
 class EquipmentDetector:
     """
     装备栏识别模块（武器名灰度匹配，配件彩色+掩码匹配，编号检测作为开关）
+    - 武器名称区域：根据 region_scaling_settings 中的配置缩放
+    - 配件区域（倍镜/握把/枪口/枪托）：截图固定缩放到 50x50，模板保持原始尺寸（模板本身应为 50x50）
+    - 编号区域：固定缩放到 28x28（模板尺寸）
     """
 
     def __init__(self, region_manager, templates_dir="templates/equipments",
@@ -32,6 +36,7 @@ class EquipmentDetector:
         if thresholds:
             self.thresholds.update(thresholds)
 
+        # 加载模板
         self.templates = {
             "names": {},
             "scopes": {},
@@ -41,9 +46,12 @@ class EquipmentDetector:
         }
         self._load_all_templates()
 
-        # 加载编号模板（用于检测装备栏开关）
+        # 加载编号模板
         self.number_templates = {}  # {1: template, 2: template}
         self._load_number_templates()
+
+        # 读取武器名称区域的缩放配置
+        self.scaling_config = self._load_scaling_config()
 
         self._enabled = False
         self._active = False
@@ -61,14 +69,41 @@ class EquipmentDetector:
                 "stock": None, "stock_score": 0.0}
         }
 
+    def _load_scaling_config(self) -> Dict[str, Dict[str, int]]:
+        """从 config.json 读取 region_scaling_settings（仅用于武器名称）"""
+        config_file = "config.json"
+        scaling = {}
+        if os.path.exists(config_file):
+            try:
+                with open(config_file, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+                    scaling = config.get("region_scaling_settings", {})
+                    print(f"[装备栏] 加载缩放配置: {list(scaling.keys())}")
+            except Exception as e:
+                print(f"[装备栏] 读取缩放配置失败: {e}")
+        return scaling
+
+    def _get_name_target_size(self, region_key: str) -> tuple:
+        """获取武器名称区域的目标缩放尺寸，若无配置则使用模板原始尺寸"""
+        # 获取第一个名称模板的尺寸作为基准
+        if not self.templates["names"]:
+            return 237, 36  # 后备默认值
+        first_name = next(iter(self.templates["names"]))
+        if self.templates["names"][first_name]:
+            tpl = self.templates["names"][first_name][0]
+            base_w, base_h = tpl.shape[1], tpl.shape[0]
+        else:
+            base_w, base_h = 237, 36
+        if region_key in self.scaling_config:
+            w = self.scaling_config[region_key].get("width", base_w)
+            h = self.scaling_config[region_key].get("height", base_h)
+            return w, h
+        return base_w, base_h
+
     # ================= 模板加载 =================
     def _load_templates(self, category: str, region_name: str):
         category_path = os.path.join(self.templates_dir, category)
         if not os.path.exists(category_path):
-            return
-
-        base_region = self.rm.get_templates_region(region_name)
-        if not base_region:
             return
 
         for item_name in os.listdir(category_path):
@@ -83,25 +118,19 @@ class EquipmentDetector:
                 if img is None:
                     continue
 
-                h, w = img.shape[:2]
-                base_w, base_h = base_region["width"], base_region["height"]
-                if h > base_h and w > base_w:
-                    start_y = (h - base_h) // 2
-                    start_x = (w - base_w) // 2
-                    cropped = img[start_y:start_y+base_h, start_x:start_x+base_w]
-                else:
-                    cropped = img
-
                 if category == "names":
-                    gray = cv2.cvtColor(cropped, cv2.COLOR_BGRA2GRAY)
-                    self.templates[category][item_name].append(gray)
+                    # 名称：灰度图，保持原始尺寸
+                    processed = cv2.cvtColor(img, cv2.COLOR_BGRA2GRAY)
+                    self.templates[category][item_name].append(processed)
                 else:
-                    if cropped.shape[2] == 4:
-                        bgr = cropped[:, :, :3]
-                        alpha = cropped[:, :, 3]
+                    # 配件：保持原始尺寸（不缩放），使用 BGR 和掩码
+                    # 假设模板图片已经是合适大小（例如 50x50），但不再强制缩放
+                    if img.shape[2] == 4:
+                        bgr = img[:, :, :3]
+                        alpha = img[:, :, 3]
                         _, mask = cv2.threshold(alpha, 1, 255, cv2.THRESH_BINARY)
                     else:
-                        bgr = cropped
+                        bgr = img
                         mask = np.ones((bgr.shape[0], bgr.shape[1]), dtype=np.uint8) * 255
                     self.templates[category][item_name].append({
                         "bgr": bgr,
@@ -122,7 +151,6 @@ class EquipmentDetector:
             self._load_templates(cat, region_name)
 
     def _load_number_templates(self):
-        """加载编号1和2的模板（灰度图，统一28x28）"""
         numbers_dir = os.path.join(self.templates_dir, "numbers")
         if not os.path.exists(numbers_dir):
             return
@@ -136,30 +164,38 @@ class EquipmentDetector:
                 img = cv2.imread(os.path.join(num_dir, filename), cv2.IMREAD_GRAYSCALE)
                 if img is None:
                     continue
-                # 缩放到 28x28
+                # 统一缩放到 28x28
                 img_resized = cv2.resize(img, (28, 28))
                 self.number_templates[num] = img_resized
-                break  # 每个数字只取第一个模板
+                break
         if self.debug:
             print(f"[装备栏] 加载编号模板: {list(self.number_templates.keys())}")
 
-    # ================= 图像预处理 =================
-    def _resize_to_base(self, img_bgr, region_name: str):
-        base_region = self.rm.get_templates_region(region_name)
-        if not base_region:
-            return None
-        target_w, target_h = base_region["width"], base_region["height"]
+    # ================= 图像缩放辅助函数 =================
+    def _resize_name_to_target(self, img_bgr, region_key: str):
+        """将武器名称截图缩放到配置的目标尺寸"""
+        target_w, target_h = self._get_name_target_size(region_key)
         if img_bgr.shape[1] != target_w or img_bgr.shape[0] != target_h:
             img_bgr = cv2.resize(img_bgr, (target_w, target_h))
         return img_bgr
 
-    def _detect_any_number(self) -> bool:
-        """检测是否至少存在一个武器编号"""
-        return self._detect_weapon_number(1) or self._detect_weapon_number(2)
+    def _resize_accessory_to_fixed(self, img_bgr):
+        """将配件截图缩放到 50x50"""
+        if img_bgr.shape[1] != 50 or img_bgr.shape[0] != 50:
+            img_bgr = cv2.resize(img_bgr, (50, 50))
+        return img_bgr
+
+    def _resize_number_to_fixed(self, img_bgr):
+        """将编号截图缩放到 28x28"""
+        if img_bgr.shape[1] != 32 or img_bgr.shape[0] != 32:
+            img_bgr = cv2.resize(img_bgr, (32, 32))
+        return img_bgr
 
     # ================= 编号检测 =================
+    def _detect_any_number(self) -> bool:
+        return self._detect_weapon_number(1) or self._detect_weapon_number(2)
+
     def _detect_weapon_number(self, weapon_slot: int) -> bool:
-        """检测指定武器槽位是否存在编号（1或2）"""
         region_key = f"weapon{weapon_slot}_number_region"
         rect = self.rm.get_real_region(region_key)
         if not rect or not self.number_templates:
@@ -167,22 +203,17 @@ class EquipmentDetector:
         with mss.mss() as sct:
             img = sct.grab(rect)
             img_bgr = cv2.cvtColor(np.array(img), cv2.COLOR_BGRA2BGR)
-            roi = cv2.resize(img_bgr, (33, 33))
+            roi = self._resize_number_to_fixed(img_bgr)
             roi_gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
             for tpl in self.number_templates.values():
-                # 模板已经是 uint8
                 res = cv2.matchTemplate(roi_gray, tpl, cv2.TM_CCOEFF_NORMED)
                 _, max_val, _, _ = cv2.minMaxLoc(res)
                 if max_val >= 0.5:
                     return True
         return False
 
-    def _detect_both_numbers(self) -> bool:
-        """检测两个编号是否都存在"""
-        return self._detect_weapon_number(1) and self._detect_weapon_number(2)
-
-    # ================= 武器名和配件识别（原逻辑） =================
-    def _match_item(self, roi_bgr, templates_dict, category: str):
+    # ================= 武器名和配件识别 =================
+    def _match_item(self, roi_bgr, templates_dict, category: str, region_key: str = None):
         threshold = self.thresholds.get(category, 0.65)
         if category == "names":
             roi_gray = cv2.cvtColor(roi_bgr, cv2.COLOR_BGR2GRAY)
@@ -210,7 +241,11 @@ class EquipmentDetector:
             for item in tpl_list:
                 tpl_bgr = item["bgr"]
                 mask = item["mask"]
+                # 注意：此时 roi_bgr 已经是 50x50，模板可能是任意大小（但应该也是 50x50）
                 if tpl_bgr.shape[0] > roi_bgr.shape[0] or tpl_bgr.shape[1] > roi_bgr.shape[1]:
+                    # 如果模板大于 50x50，则跳过（需要调整模板）
+                    if self.debug:
+                        print(f"[警告] 模板 {name} 尺寸 {tpl_bgr.shape} 大于截图 {roi_bgr.shape}")
                     continue
                 res = cv2.matchTemplate(roi_bgr, tpl_bgr, cv2.TM_CCOEFF_NORMED, mask=mask)
                 _, max_val, _, max_loc = cv2.minMaxLoc(res)
@@ -220,41 +255,8 @@ class EquipmentDetector:
                     best_loc = max_loc
                     best_tpl_item = item
         if best_score >= threshold and best_name is not None:
-            x, y = best_loc
-            h, w = best_tpl_item["bgr"].shape[:2]
-            matched_region = roi_bgr[y:y+h, x:x+w]
-            mask = best_tpl_item["mask"]
-            diff = cv2.absdiff(matched_region, best_tpl_item["bgr"])
-            diff_gray = np.mean(diff, axis=2)
-            masked_diff = diff_gray[mask > 0]
-            if len(masked_diff) == 0:
-                return None, best_score
-            mse = np.mean(masked_diff ** 2)
-            # MSE验证已注释，可根据需要开启
-            # if mse > 450:
-            #     return None, best_score
             return best_name, best_score
         return None, best_score
-
-    def _detect_weapon_name_only(self, weapon_slot: int):
-        """仅检测武器名称（用于快速检测，但主要用编号）"""
-        slot_regions = {1: "weapon1_name_region", 2: "weapon2_name_region"}
-        name_region = slot_regions.get(weapon_slot)
-        if not name_region:
-            return None
-        name_rect = self.rm.get_real_region(name_region)
-        if not name_rect:
-            return None
-        with mss.mss() as sct:
-            img = sct.grab(name_rect)
-            img_bgr = cv2.cvtColor(np.array(img), cv2.COLOR_BGRA2BGR)
-            img_resized = self._resize_to_base(img_bgr, name_region)
-            if img_resized is None:
-                return None
-            name, score = self._match_item(img_resized, self.templates["names"], "names")
-            if name and score >= self.thresholds["names"]:
-                return name
-        return None
 
     def _detect_weapon(self, weapon_slot: int):
         slot_regions = {
@@ -272,23 +274,19 @@ class EquipmentDetector:
             if name_rect:
                 img = sct.grab(name_rect)
                 img_bgr = cv2.cvtColor(np.array(img), cv2.COLOR_BGRA2BGR)
-                img_resized = self._resize_to_base(img_bgr, name_region)
-                if img_resized is not None:
-                    name, score = self._match_item(img_resized, self.templates["names"], "names")
-                    result["name"] = name
-                    result["name_score"] = score
-                    if self.debug:
-                        live_disp = cv2.cvtColor(img_resized, cv2.COLOR_BGR2GRAY)
-                        cv2.imshow(f"Weapon{weapon_slot}_name_live", live_disp)
-                        cv2.waitKey(1)
-                else:
-                    result["name"] = None
-                    result["name_score"] = 0.0
+                img_resized = self._resize_name_to_target(img_bgr, name_region)
+                name, score = self._match_item(img_resized, self.templates["names"], "names", name_region)
+                result["name"] = name
+                result["name_score"] = score
+                if self.debug:
+                    live_disp = cv2.cvtColor(img_resized, cv2.COLOR_BGR2GRAY)
+                    cv2.imshow(f"Weapon{weapon_slot}_name_live", live_disp)
+                    cv2.waitKey(1)
             else:
                 result["name"] = None
                 result["name_score"] = 0.0
 
-            # 配件
+            # 配件（仅当武器名称识别成功时才识别配件，减少误报）
             for key, region_key, templates_key in [
                 ("scope", scope_region, "scopes"),
                 ("grip", grip_region, "grips"),
@@ -303,14 +301,11 @@ class EquipmentDetector:
                 if rect:
                     img = sct.grab(rect)
                     img_bgr = cv2.cvtColor(np.array(img), cv2.COLOR_BGRA2BGR)
-                    img_resized = self._resize_to_base(img_bgr, region_key)
-                    if img_resized is not None:
-                        match, score = self._match_item(img_resized, self.templates[templates_key], templates_key)
-                        result[key] = match
-                        result[f"{key}_score"] = score
-                    else:
-                        result[key] = None
-                        result[f"{key}_score"] = 0.0
+                    # 配件截图固定缩放到 50x50
+                    img_resized = self._resize_accessory_to_fixed(img_bgr)
+                    match, score = self._match_item(img_resized, self.templates[templates_key], templates_key, region_key)
+                    result[key] = match
+                    result[f"{key}_score"] = score
                 else:
                     result[key] = None
                     result[f"{key}_score"] = 0.0
@@ -325,11 +320,10 @@ class EquipmentDetector:
                     time.sleep(1 / self.fps)
                     continue
 
-                # 检查是否有任意编号存在
                 any_number = self._detect_any_number()
                 if not any_number:
                     consecutive_no_numbers += 1
-                    if consecutive_no_numbers >= 4:   # 连续4次无编号才关闭
+                    if consecutive_no_numbers >= 4:
                         self._active = False
                         if self._callback:
                             self._callback(False, self.current_weapons)
@@ -340,7 +334,6 @@ class EquipmentDetector:
                 else:
                     consecutive_no_numbers = 0
 
-                # 识别武器和配件
                 new_weapons = {}
                 for slot in [1, 2]:
                     new_weapons[slot] = self._detect_weapon(slot)
@@ -404,7 +397,6 @@ class EquipmentDetector:
         else:
             if self.on_status_change:
                 self.on_status_change("confirming")
-            # 快速检测2次，至少1次成功即打开
             success = False
             for _ in range(2):
                 if self._detect_any_number():
@@ -412,15 +404,12 @@ class EquipmentDetector:
                     break
                 time.sleep(0.02)
             if success:
-                # 立即通知打开，不等配件识别
                 self._active = True
                 self._last_detected_time = time.time()
                 if self._callback:
-                    # 先发送 True，当前数据可能是旧的，但随后会立即更新
                     self._callback(True, self.current_weapons)
                 if self.on_status_change:
                     self.on_status_change("opened")
-                # 立即执行一次完整检测以刷新数据
                 for slot in [1, 2]:
                     self.current_weapons[slot] = self._detect_weapon(slot)
                 if self._callback:
