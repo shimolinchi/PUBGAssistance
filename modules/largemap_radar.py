@@ -34,20 +34,19 @@ class AutoMapDistanceAssistant:
 
         # 颜色配置（与小地图共用 pnt_colors）
         self.colors = {
-            "Yellow": {"bgr": (0, 215, 255), "hex": "#E3D43C"},
-            "Orange": {"bgr": (13, 82, 179), "hex": "#B3500D"},
-            "Blue": {"bgr": (163, 61, 26), "hex": "#1A3EA3"},
-            "Green": {"bgr": (102, 150, 0), "hex": "#109166"}
+            "Yellow": {"lower": [26, 150, 160], "upper": [30, 255, 255], "hex": "#E9E511"},
+            "Orange": {"lower": [10, 160, 160], "upper": [14, 255, 255], "hex": "#DA6226"},
+            "Blue": {"lower": [110, 120, 160], "upper": [114, 255, 255], "hex": "#017BC2"},
+            "Green": {"lower": [78, 150, 120], "upper": [82, 255, 255], "hex": "#0F9D16"}
         }
-        # 替代方案：从 region_manager 内部配置获取，但 region_manager 只提供了 detection_regions 和 map_scales
-        # 我们仍从 config.json 读取颜色，或者从 region_manager 中暴露颜色配置。为了简洁，直接从原 config_file 读取颜色部分
-        self._load_colors_from_config()
-
         self.color_order = ["Yellow", "Orange", "Blue", "Green"]
         self.base_colors = {
             "Yellow": "#E9E511", "Orange": "#DA6226",
             "Blue": "#017BC2", "Green": "#0F9D16"
         }
+        # 替代方案：从 region_manager 内部配置获取，但 region_manager 只提供了 detection_regions 和 map_scales
+        # 我们仍从 config.json 读取颜色，或者从 region_manager 中暴露颜色配置。为了简洁，直接从原 config_file 读取颜色部分
+        self._load_colors_from_config()
 
         self.state = "IDLE"
         self.player_pt = None
@@ -67,9 +66,12 @@ class AutoMapDistanceAssistant:
             try:
                 with open(self.config_file, 'r', encoding='utf-8') as f:
                     config = json.load(f)
-                    self.colors = config.get("pnt_colors", {})
+                    self.colors = config.get("pnt_colors", self.colors)
+                    for color_name, hex_color in self.base_colors.items():
+                        if color_name in self.colors:
+                            self.colors[color_name]["hex"] = hex_color
             except:
-                self.colors = {}
+                pass
 
     def _load_pnt_templates(self, preferred_dir):
         for tpl_dir in [preferred_dir, "templates/pnt"]:
@@ -254,82 +256,65 @@ class AutoMapDistanceAssistant:
                   x1, y2, x1, y2-radius, x1, y1+radius, x1, y1]
         self.canvas.create_polygon(points, smooth=True, **kwargs)
 
-    def _update_wait_ui(self):
-        self.canvas.delete("all")
-        if self.alpha_hud:
-            self.alpha_hud.clear()
+    def _get_panel_layout(self):
         minimap_rect = self.region_manager.get_real_region("minimap_region")
+        panel_height = 25
         if minimap_rect:
-            panel_height = 25
             spacing = 10
-            # 提示框放在大地图测距位置（最上方）
-            panel_y = minimap_rect["top"] - panel_height - spacing - panel_height - self.y_spacer
-            if panel_y < 0:
-                panel_y = 0
-            box_w = int(minimap_rect["width"] * 0.52)
-            x1 = minimap_rect["left"] + minimap_rect["width"] - box_w
-            y1 = panel_y
+            panel_width = int(minimap_rect["width"] * 0.82)
+            total_spacing = 3 * spacing
+            box_width = (panel_width - total_spacing) // 4
+            total_width = 4 * box_width + total_spacing
+            start_x = minimap_rect["left"] + minimap_rect["width"] - total_width
+            start_y = minimap_rect["top"] - panel_height - spacing - panel_height - self.y_spacer
+            if start_y < 0:
+                start_y = 0
         else:
-            box_w, box_h = 240, 25
-            mortar_total_width = 465
-            start_x = self.sw - mortar_total_width - 25
-            x1 = start_x + (mortar_total_width - box_w) // 2
-            y1 = self.sh * 0.465 - box_h - 15
+            box_width, spacing = 90, 15
+            total_width = 4 * box_width + 3 * spacing
+            start_x = self.sw - total_width - 25
+            start_y = self.sh * 0.465
+        return start_x, start_y, box_width, panel_height, spacing, total_width
 
-        self._draw_rounded_rect(x1, y1, x1+box_w, y1+25, radius=10, fill="#017BC2", outline="#017BC2", width=2, tags="hud")
-        self.canvas.create_text(x1 + box_w/2, y1 + 12.5, text="请左键点击你的当前位置", fill="#FFFFFF", font=("Microsoft YaHei", 12, "bold"), tags="hud")
+    def _render_prompt_card(self, text, color_name):
+        self.canvas.delete("all")
+        start_x, start_y, _, panel_height, _, total_width = self._get_panel_layout()
+        base_hex = self.base_colors[color_name]
+        if self.alpha_hud:
+            self.alpha_hud.render_cards([{
+                "x1": start_x,
+                "y1": start_y,
+                "x2": start_x + total_width,
+                "y2": start_y + panel_height,
+                "radius": 10,
+                "fill": base_hex,
+                "alpha": 51,
+                "outline": base_hex,
+                "outline_alpha": 204,
+                "outline_width": 2,
+                "text": text,
+                "text_fill": "#FFFFFF",
+                "font_size": 12,
+            }])
+            return
+
+        self._draw_rounded_rect(start_x, start_y, start_x + total_width, start_y + panel_height, radius=10,
+                                fill=self._dim_color(base_hex, 0.2), outline=base_hex, width=2, tags="hud")
+        self.canvas.create_text(start_x + total_width / 2, start_y + panel_height / 2, text=text,
+                                fill="#FFFFFF", font=("Microsoft YaHei", 12, "bold"), tags="hud")
+
+    def _update_wait_ui(self):
+        self._render_prompt_card("请左键点击你的当前位置", "Blue")
 
     def _update_calc_ui(self):
-        self.canvas.delete("all")
-        if self.alpha_hud:
-            self.alpha_hud.clear()
-        minimap_rect = self.region_manager.get_real_region("minimap_region")
-        if minimap_rect:
-            panel_height = 25
-            spacing = 10
-            panel_y = minimap_rect["top"] - panel_height - spacing - panel_height - self.y_spacer
-            if panel_y < 0:
-                panel_y = 0
-            box_w = int(minimap_rect["width"] * 0.52)
-            x1 = minimap_rect["left"] + minimap_rect["width"] - box_w
-            y1 = panel_y
-        else:
-            box_w, box_h = 240, 25
-            mortar_total_width = 465
-            start_x = self.sw - mortar_total_width - 25
-            x1 = start_x + (mortar_total_width - box_w) // 2
-            y1 = self.sh * 0.465 - box_h - 15
-
-        self._draw_rounded_rect(x1, y1, x1+box_w, y1+25, radius=10, fill="#DA6226", outline="#DA6226", width=2, tags="hud")
-        self.canvas.create_text(x1 + box_w/2, y1 + 12.5, text="正在寻找目标...", fill="#FFFFFF", font=("Microsoft YaHei", 12, "bold"), tags="hud")
+        self._render_prompt_card("正在测距...", "Orange")
 
     def _render_auto_hud(self):
         self.canvas.delete("all")
         if not self.show_display:
             return
 
-        minimap_rect = self.region_manager.get_real_region("minimap_region")
-        if minimap_rect:
-            panel_height = 25
-            spacing = 10                     # 卡片之间的间距（增大）
-            panel_width = int(minimap_rect["width"] * 0.82)
-            total_spacing = 3 * spacing
-            box_width = (panel_width - total_spacing) // 4
-            panel_x = minimap_rect["left"] + minimap_rect["width"] - panel_width
-            # 大地图测距放在最上方，紧贴小地图上方（间隔 spacing）
-            panel_y = minimap_rect["top"] - panel_height - spacing - panel_height - self.y_spacer
-            if panel_y < 0:
-                panel_y = 0
-            start_x = panel_x
-            start_y = panel_y
-        else:
-            # 回退位置
-            box_w, box_h, spacing = 90, 25, 15
-            total_width = 4 * box_w + 3 * spacing
-            start_x = self.sw - total_width - 25
-            start_y = self.sh * 0.465
-            box_width = box_w
-            spacing = 15
+        start_x, start_y, box_width, panel_height, spacing, _ = self._get_panel_layout()
 
         for i, color_name in enumerate(self.color_order):
             dist = self.last_measured_dists.get(color_name)
@@ -345,7 +330,7 @@ class AutoMapDistanceAssistant:
             x1 = start_x + i * (box_width + spacing)
             y1 = start_y
             x2 = x1 + box_width
-            y2 = y1 + 25
+            y2 = y1 + panel_height
 
             if self.alpha_hud:
                 continue
@@ -353,7 +338,7 @@ class AutoMapDistanceAssistant:
             self._draw_rounded_rect(x1, y1, x2, y2, radius=10, fill=bg_color, outline=base_hex, width=2, tags="hud")
             font_size = 14 if dist is not None else 13
             text_color = "#FFFFFF" if dist is not None else "#7F8C8D"
-            self.canvas.create_text(x1 + box_width/2, y1 + 12.5, text=text, fill=text_color, font=("Microsoft YaHei", font_size, "bold"), tags="hud")
+            self.canvas.create_text(x1 + box_width/2, y1 + panel_height / 2, text=text, fill=text_color, font=("Microsoft YaHei", font_size, "bold"), tags="hud")
 
         if self.alpha_hud:
             cards = []
@@ -376,7 +361,7 @@ class AutoMapDistanceAssistant:
                 x1 = start_x + i * (box_width + spacing)
                 y1 = start_y
                 x2 = x1 + box_width
-                y2 = y1 + 25
+                y2 = y1 + panel_height
                 cards.append({
                     "x1": x1,
                     "y1": y1,

@@ -59,10 +59,10 @@ class RegionScalingAutoCalibrator(RegionScalingCalibrator):
     """Windowed region scaling calibrator with an automatic search button."""
 
     def build_ui(self):
-        self.root.geometry("820x560")
-        self.root.minsize(780, 520)
+        self.root.geometry("660x600")
+        self.root.minsize(640, 580)
         self.root.configure(bg="#FFFFFF")
-        self.canvas_w = 260
+        self.canvas_w = 230
         self.canvas_h = 90
         self.canvas_cx = self.canvas_w // 2
         self.canvas_cy = self.canvas_h // 2
@@ -74,14 +74,12 @@ class RegionScalingAutoCalibrator(RegionScalingCalibrator):
         left.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 12))
         left.pack_propagate(False)
 
-        right = tk.Frame(main, bg="#FFFFFF")
-        right.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
+        right = tk.Frame(main, bg="#FFFFFF", width=260)
+        right.pack(side=tk.RIGHT, fill=tk.Y)
+        right.pack_propagate(False)
 
-        title = tk.Label(left, text="区域缩放校准", bg="#FFFFFF", fg="#111827", font=("Microsoft YaHei", -20, "bold"))
+        title = tk.Label(left, text="截图区域缩放比例校准", bg="#FFFFFF", fg="#111827", font=("Microsoft YaHei", -20, "bold"))
         title.pack(anchor="w")
-        subtitle = tk.Label(left, text="选择区域与模板，可手动调整，也可自动寻找 X/Y 缩放比例。",
-                            bg="#FFFFFF", fg="#6B7280", font=("Microsoft YaHei", -12), wraplength=330, justify=tk.LEFT)
-        subtitle.pack(anchor="w", pady=(2, 10))
 
         selector = self._card(left, "1. 选择校准目标")
         region_values = [rk for rk, _, _, _, _ in self.regions]
@@ -94,7 +92,7 @@ class RegionScalingAutoCalibrator(RegionScalingCalibrator):
         self.template_combo.pack(fill=tk.X, padx=10, pady=(4, 8))
 
         self.info_label = tk.Label(selector, text="请选择一个区域", bg="#FFFFFF", fg="#6B7280",
-                                   justify=tk.LEFT, font=("Microsoft YaHei", -12), wraplength=320)
+                                   justify=tk.LEFT, font=("Microsoft YaHei", -11), wraplength=340)
         self.info_label.pack(fill=tk.X, padx=10, pady=(0, 8))
 
         size_card = self._card(left, "2. 手动缩放")
@@ -149,20 +147,34 @@ class RegionScalingAutoCalibrator(RegionScalingCalibrator):
                                          font=("Microsoft YaHei", -12, "bold"), anchor="w")
         self.best_score_label.pack(fill=tk.X, padx=10, pady=(0, 8))
 
-        guide = tk.Label(
-            right,
-            text="说明：模板约 160x50，截图区域只需略大于模板。自动校准会搜索 X/Y 缩放比例，完成后请观察预览与分数，再保存配置。",
-            bg="#FFFFFF",
-            fg="#6B7280",
-            font=("Microsoft YaHei", -12),
-            wraplength=410,
-            justify=tk.LEFT,
-        )
-        guide.pack(fill=tk.X, pady=(0, 8))
-
         self.orig_canvas = self._preview_card(right, "原始截图")
         self.scaled_canvas = self._preview_card(right, "缩放后截图")
         self.template_canvas = self._preview_card(right, "当前模板")
+
+        warning = tk.Label(
+            right,
+            text="需要在完成所有区域校准后进行！",
+            bg="#FFFFFF",
+            fg="#DC2626",
+            font=("Microsoft YaHei", -12, "bold"),
+            justify=tk.LEFT,
+        )
+        warning.pack(fill=tk.X, pady=(4, 2))
+
+        guide = tk.Label(
+            right,
+            text=(
+                "依次校准四个区域。先在游戏或截图中显示对应内容，确认原始截图能清楚看到武器或姿势，"
+                "再选择匹配模板。可手动调节宽高以获得最高分后保存；也可点击“自动寻找XY缩放比例”，"
+                "确认结果无误后保存配置。"
+            ),
+            bg="#FFFFFF",
+            fg="#6B7280",
+            font=("Microsoft YaHei", -12),
+            wraplength=250,
+            justify=tk.LEFT,
+        )
+        guide.pack(fill=tk.X, pady=(0, 0))
 
     def _card(self, parent, title):
         frame = tk.LabelFrame(parent, text=f" {title} ", bg="#FFFFFF", fg="#111827",
@@ -174,7 +186,7 @@ class RegionScalingAutoCalibrator(RegionScalingCalibrator):
     def _preview_card(self, parent, title):
         frame = tk.LabelFrame(parent, text=f" {title} ", bg="#FFFFFF", fg="#111827",
                               font=("Microsoft YaHei", -13, "bold"), bd=1, relief=tk.SOLID)
-        frame.pack(fill=tk.X, pady=(0, 8))
+        frame.pack(anchor="w", pady=(0, 8))
         canvas = tk.Canvas(frame, bg="#F8FAFC", width=self.canvas_w, height=self.canvas_h,
                            highlightthickness=1, highlightbackground="#E5E7EB")
         canvas.pack(padx=10, pady=8)
@@ -203,6 +215,18 @@ class RegionScalingAutoCalibrator(RegionScalingCalibrator):
         tk.Entry(group, textvariable=var, width=4, bg="#F9FAFB", relief=tk.FLAT,
                  font=("Consolas", -11)).pack(side=tk.LEFT, padx=(3, 1))
         tk.Label(group, text=suffix, bg="#FFFFFF", fg="#6B7280", font=("Microsoft YaHei", -11)).pack(side=tk.LEFT)
+
+
+    def on_region_selected(self, event=None):
+        super().on_region_selected(event)
+        if self.current_region_info and self.real_region_rect:
+            self.info_label.config(
+                text=(
+                    f"当前区域: {self.current_region_info[1]}\n"
+                    f"模板基准尺寸: {self.base_w}x{self.base_h}    "
+                    f"实际截图区域: {self.real_region_rect['width']}x{self.real_region_rect['height']}"
+                )
+            )
 
 
     def start_auto_calibration(self):
@@ -360,6 +384,12 @@ class RegionScalingAutoCalibrator(RegionScalingCalibrator):
         messagebox.showerror("自动校准失败", error)
 
 
+def open_region_scaling_auto_calibrator(parent=None):
+    window = tk.Toplevel(parent) if parent else tk.Tk()
+    app = RegionScalingAutoCalibrator(window)
+    return app
+
+
 if __name__ == "__main__":
     import ctypes
 
@@ -368,6 +398,5 @@ if __name__ == "__main__":
     except Exception:
         pass
 
-    root = tk.Tk()
-    app = RegionScalingAutoCalibrator(root)
-    root.mainloop()
+    app = open_region_scaling_auto_calibrator()
+    app.root.mainloop()

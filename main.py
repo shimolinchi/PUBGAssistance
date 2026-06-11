@@ -37,6 +37,11 @@ from modules.weapon_detector import WeaponDetector
 from modules.equipment_detector import EquipmentDetector
 from modules.recoil_control import RecoilControlModule as RecoilControlModuleNew
 
+try:
+    from modules.region_calibrator_auto import open_region_scaling_auto_calibrator
+except Exception:
+    open_region_scaling_auto_calibrator = None
+
 class RoundedButton(tk.Canvas):
     def __init__(self, parent, width, height, radius, text, command, text_size = -10, is_toggle=False, *args, **kwargs):
         super().__init__(parent, width=width, height=height, bg=parent["bg"], highlightthickness=0, *args, **kwargs)
@@ -44,13 +49,13 @@ class RoundedButton(tk.Canvas):
         self.is_toggle = is_toggle
         self.is_active = False
         self.color_default = "#FFFFFF"
-        self.color_hover = "#F3F4F6"
-        self.color_pressed = "#D1D5DB"
-        self.color_active = "#E5E7EB"
-        self.text_color = "#000000"
+        self.color_hover = "#F4F7FB"
+        self.color_pressed = "#D7DEE8"
+        self.color_active = "#E8EEF6"
+        self.text_color = "#111827"
         self.radius = radius
         self.text_size = text_size
-        self.rect = self._create_rounded_rect(0, 0, width, height, radius, fill=self.color_default, outline="#E5E7EB", width=1)
+        self.rect = self._create_rounded_rect(1, 1, width - 1, height - 1, radius, fill=self.color_default, outline="#FFFFFF", width=1)
         self.text_id = self.create_text(width/2, height/2, text=text, fill=self.text_color, font=("Microsoft YaHei", text_size, "bold"))
         self.bind("<ButtonPress-1>", self._on_press)
         self.bind("<ButtonRelease-1>", self._on_release)
@@ -58,6 +63,7 @@ class RoundedButton(tk.Canvas):
         self.bind("<Leave>", self._on_leave)
 
     def _create_rounded_rect(self, x1, y1, x2, y2, r, **kwargs):
+        r = min(r, (x2 - x1) / 2, (y2 - y1) / 2)
         points = [x1+r, y1, x2-r, y1, x2, y1, x2, y1+r, x2, y2-r, x2, y2, x2-r, y2, x1+r, y2, x1, y2, x1, y2-r, x1, y1+r, x1, y1]
         return self.create_polygon(points, smooth=True, **kwargs)
 
@@ -101,9 +107,16 @@ class TacticalHub:
         self.root.tk.call('tk', 'scaling', factor)
         
         self.root.title("PUBG 战术助手")
-        self.root.geometry("250x400")          # 保持原始尺寸，tkinter 会自动按 factor 放大
-        self.root.configure(bg="#F9FAFB")
+        self.window_width = 280
+        self.window_height = 380
+        self.window_radius = 18
+        self.root.geometry(f"{self.window_width}x{self.window_height}")
+        self.root.minsize(self.window_width, self.window_height)
+        self.root.configure(bg="#DDE6F0")
         self.root.attributes("-topmost", True)
+        self.root.attributes("-alpha", 0.6)
+        self.root.overrideredirect(True)
+        self.root.after(0, self._schedule_window_rounding)
 
         self.config_file = "config.json"
         self._set_app_icon('icon.ico')
@@ -206,6 +219,7 @@ class TacticalHub:
         self.middle_pressed = False
         self.alt_pressed = False
         self._is_capturing = False
+        self.auto_calibrator_windows = []
 
         # 状态覆盖层
         self.assistant_btns = {}          # 关键！
@@ -259,6 +273,8 @@ class TacticalHub:
                 self.current_weapon = None
                 if self.recoil_enabled:
                     self.recoil.update_current_weapon(None)
+            if self.current_weapon is not None and self.map_assist.is_enabled:
+                self.map_assist.set_enabled(False)
             self.update_weapon_ui(self.current_weapon)
             self.update_status_full()
             self.update_status_display()
@@ -285,6 +301,8 @@ class TacticalHub:
             "toggle_display": "<f2>",
             "toggle_recoil": "<f3>",
             "measure_map": "<f4>",
+            "marker_prev": "q",
+            "marker_next": "e",
             "toggle_equipment": "tab"
         }
         self.load_hotkey_config()
@@ -353,40 +371,118 @@ class TacticalHub:
         self._sync_marker_color_to_assistants()
         self.update_status_display()
 
+    def _cycle_marker_hotkey(self, direction):
+        if self._should_show_marker_indicator():
+            self.cycle_marker_color(direction)
+
+    def _apply_window_rounding(self):
+        try:
+            self.root.update_idletasks()
+            try:
+                hwnd = int(self.root.frame(), 16)
+            except Exception:
+                hwnd = self.root.winfo_id()
+            width = self.root.winfo_width()
+            height = self.root.winfo_height()
+            diameter = self.window_radius * 2
+            region = ctypes.windll.gdi32.CreateRoundRectRgn(0, 0, width + 1, height + 1, diameter, diameter)
+            if not ctypes.windll.user32.SetWindowRgn(hwnd, region, True):
+                ctypes.windll.gdi32.DeleteObject(region)
+        except Exception as e:
+            print(f"[主窗口] 圆角应用失败: {e}")
+
+    def _schedule_window_rounding(self):
+        for delay in (0, 100, 500):
+            self.root.after(delay, self._apply_window_rounding)
+
     def on_equipment_status(self, status):
         self.equipment_status = status
         self.update_status_display()
 
     def init_ui(self):
         style = ttk.Style(self.root)
-        style.configure("TNotebook.Tab", font=("Microsoft YaHei", self.font_status, "bold"))
+        style.configure("TNotebook", background="#DDE6F0", borderwidth=0, tabmargins=(8, 4, 8, 0))
+        style.configure("TNotebook.Tab", font=("Microsoft YaHei", self.font_status, "bold"), padding=(12, 6), background="#FFFFFF", borderwidth=0)
+        style.map("TNotebook.Tab", background=[("selected", "#FFFFFF"), ("!selected", "#EAF0F7")])
 
-        self.notebook = ttk.Notebook(self.root)
-        self.notebook.pack(fill="both", expand=True, padx=5, pady=5)
+        self.window_frame = tk.Frame(self.root, bg="#DDE6F0", bd=0, highlightthickness=1, highlightbackground="#FFFFFF")
+        self.window_frame.pack(fill="both", expand=True)
+        self._build_title_bar()
 
-        self.map_tab = tk.Frame(self.notebook, bg="#F9FAFB")
-        self.notebook.add(self.map_tab, text="地图点位")
+        self.tab_bar = tk.Frame(self.window_frame, bg="#DDE6F0")
+        self.tab_bar.pack(fill="x", padx=8, pady=(1, 0))
+        self.content_frame = tk.Frame(self.window_frame, bg="#DDE6F0")
+        self.content_frame.pack(fill="both", expand=True, padx=8, pady=(4, 8))
+        self.tab_buttons = []
+        self.tab_frames = []
+        self.current_tab_index = 0
+
+        self.map_tab = self._add_tab("地图点位")
         self.map_tab.columnconfigure(0, weight=1)
         self.build_map_tab()
 
-        self.launch_tab = tk.Frame(self.notebook, bg="#F9FAFB")
-        self.notebook.add(self.launch_tab, text="启动助手")
+        self.launch_tab = self._add_tab("启动助手")
         self.build_launch_tab()
         self.btn_weapon_detect.set_active(True)
         self.btn_weapon_detect.set_text("关闭武器检测")
 
-        self.calib_tab = tk.Frame(self.notebook, bg="#F9FAFB")
-        self.notebook.add(self.calib_tab, text="校准区域")
+        self.calib_tab = self._add_tab("校准区域")
         self.build_calib_tab()
 
-        self.key_tab = tk.Frame(self.notebook, bg="#F9FAFB")
-        self.notebook.add(self.key_tab, text="按键设置")
+        self.key_tab = self._add_tab("按键设置")
         self.build_key_tab()
+        self.select_tab(0)
 
         self.status_var = tk.StringVar(value="就绪")
-        self.status_bar = tk.Label(self.root, textvariable=self.status_var, bd=1, relief=tk.SUNKEN,
-                                   anchor=tk.CENTER, bg="#3498DB", fg="#FFFFFF", font=("Microsoft YaHei", self.font_status, "bold"))
-        self.status_bar.pack(side=tk.BOTTOM, fill=tk.X)
+
+    def _add_tab(self, text):
+        idx = len(self.tab_frames)
+        frame = tk.Frame(self.content_frame, bg="#DDE6F0")
+        btn = RoundedButton(self.tab_bar, 62, 28, 18, text, command=lambda i=idx: self.select_tab(i), is_toggle=True, text_size=self.font_status)
+        btn.pack(side=tk.LEFT, padx=2)
+        self.tab_frames.append(frame)
+        self.tab_buttons.append(btn)
+        return frame
+
+    def select_tab(self, idx):
+        if not self.tab_frames:
+            return
+        idx %= len(self.tab_frames)
+        for frame in self.tab_frames:
+            frame.pack_forget()
+        for button_index, button in enumerate(self.tab_buttons):
+            button.set_active(button_index == idx)
+        self.tab_frames[idx].pack(fill="both", expand=True)
+        self.current_tab_index = idx
+
+    def _build_title_bar(self):
+        self.title_bar = tk.Frame(self.window_frame, bg="#DDE6F0", height=30)
+        self.title_bar.pack(fill="x", side=tk.TOP)
+        self.title_bar.pack_propagate(False)
+        self.title_bar.bind("<ButtonPress-1>", self._begin_window_drag)
+        self.title_bar.bind("<B1-Motion>", self._drag_window)
+
+        title = tk.Label(self.title_bar, text="PUBG 战术助手", bg="#DDE6F0", fg="#111827", font=("Microsoft YaHei", self.font_status, "bold"))
+        title.pack(side=tk.LEFT, padx=10)
+        title.bind("<ButtonPress-1>", self._begin_window_drag)
+        title.bind("<B1-Motion>", self._drag_window)
+
+        close_btn = tk.Canvas(self.title_bar, width=18, height=18, bg="#DDE6F0", highlightthickness=0, bd=0)
+        close_btn.place(x=self.window_width - self.window_radius - 9, y=self.window_radius - 9)
+        close_btn.create_oval(4, 4, 14, 14, fill="#FF5F57", outline="#E0473F")
+        close_btn.bind("<ButtonRelease-1>", lambda event: self.on_closing())
+
+    def _begin_window_drag(self, event):
+        self._drag_start_x = event.x_root - self.root.winfo_x()
+        self._drag_start_y = event.y_root - self.root.winfo_y()
+
+    def _drag_window(self, event):
+        self.root.geometry(f"+{event.x_root - self._drag_start_x}+{event.y_root - self._drag_start_y}")
+
+    def switch_tab(self, direction):
+        if not self.tab_frames:
+            return
+        self.select_tab(self.current_tab_index + direction)
 
     def _init_status_overlay(self):
         if TransparentHudWindow:
@@ -404,13 +500,14 @@ class TacticalHub:
         """
         self.status_var.set(status_text)
         colors = {
-            "info": "#3498DB",     # 天蓝
-            "success": "#2ECC71",  # 绿
+            "info": "#017BC2",     # 蓝
+            "success": "#0F9D16",  # 绿
             "error": "#E74C3C",    # 红
-            "warning": "#F39C12",  # 橙
-            "default": "#3498DB"
+            "warning": "#DA6226",  # 橙
+            "default": "#017BC2"
         }
-        self.status_bar.config(bg=colors.get(status_type, colors["default"]))
+        if hasattr(self, "status_bar"):
+            self.status_bar.config(bg=colors.get(status_type, colors["default"]))
 
     def select_map(self, idx):
         for i, btn in enumerate(self.map_buttons):
@@ -435,43 +532,43 @@ class TacticalHub:
         for i, map_name in enumerate(self.map_names):
             short_name = map_name.split()[0]
             # 创建容器 Frame，使按钮能够居中
-            container = tk.Frame(self.map_tab, bg="#F9FAFB")
-            container.grid(row=i, column=0, sticky="ew", padx=10, pady=5)
+            container = tk.Frame(self.map_tab, bg="#DDE6F0")
+            container.grid(row=i, column=0, sticky="ew", padx=0, pady=3)
             container.columnconfigure(0, weight=1)   # 容器内水平扩展
-            btn = RoundedButton(container, 220, 34, 25, map_name,
+            btn = RoundedButton(container, 264, 32, 22, map_name,
                                 command=lambda idx=i: self.select_map(idx), is_toggle=True,text_size=self.font_small)
             btn.pack(anchor="center")               # 按钮在容器内水平居中
             self.map_buttons.append(btn)
 
         # 标点尺寸标签
-        tk.Label(self.map_tab, text="--标点尺寸--", bg="#F9FAFB", fg="#6B7280", font=("Microsoft YaHei", self.font_status, "bold")).grid(
+        tk.Label(self.map_tab, text="--标点尺寸--", bg="#DDE6F0", fg="#6B7280", font=("Microsoft YaHei", self.font_status, "bold")).grid(
             row=len(self.map_names), column=0, pady=5
         )
         # 标点尺寸按钮（水平排列）
-        size_frame = tk.Frame(self.map_tab, bg="#F9FAFB")
+        size_frame = tk.Frame(self.map_tab, bg="#DDE6F0")
         size_frame.grid(row=len(self.map_names)+1, column=0, pady=5)
         self.size_buttons = []
         sizes = [("小", "small"), ("中", "medium"), ("大", "large")]
         for i, (name, val) in enumerate(sizes):
-            btn = RoundedButton(size_frame, 66, 34, 25, name,
+            btn = RoundedButton(size_frame, 82, 30, 21, name,
                                 command=lambda idx=i: self.select_size(idx), is_toggle=True, text_size=self.font_small)
-            btn.grid(row=0, column=i, padx=4)
+            btn.grid(row=0, column=i, padx=3)
             self.size_buttons.append(btn)
 
         self.select_map(0)
         self.select_size(1)
 
     def build_launch_tab(self):
-        self.btn_weapon_detect = RoundedButton(self.launch_tab, 220, 35, 25, "开启武器检测", command=self.toggle_weapon_detection, is_toggle=True, text_size=self.font_large)
-        self.btn_weapon_detect.pack(pady=4)
-        self.btn_display = RoundedButton(self.launch_tab, 220, 35, 25, "开启瞄准辅助", command=self.toggle_display, is_toggle=True, text_size=self.font_large)
-        self.btn_display.pack(pady=4)
-        self.btn_recoil = RoundedButton(self.launch_tab, 220, 35, 25, "开启辅助压枪", command=self.toggle_recoil, is_toggle=True, text_size=self.font_large)
-        self.btn_recoil.pack(pady=4)
-        self.btn_reload_recoil = RoundedButton(self.launch_tab, 220, 35, 25, "重新加载压枪配置", command=self.reload_recoil_config, is_toggle=False, text_size=self.font_large)
-        self.btn_reload_recoil.pack(pady=4)
+        self.btn_weapon_detect = RoundedButton(self.launch_tab, 264, 34, 24, "开启武器检测", command=self.toggle_weapon_detection, is_toggle=True, text_size=self.font_large)
+        self.btn_weapon_detect.pack(pady=3)
+        self.btn_display = RoundedButton(self.launch_tab, 264, 34, 24, "开启瞄准辅助", command=self.toggle_display, is_toggle=True, text_size=self.font_large)
+        self.btn_display.pack(pady=3)
+        self.btn_recoil = RoundedButton(self.launch_tab, 264, 34, 24, "开启辅助压枪", command=self.toggle_recoil, is_toggle=True, text_size=self.font_large)
+        self.btn_recoil.pack(pady=3)
+        self.btn_reload_recoil = RoundedButton(self.launch_tab, 264, 34, 24, "重新加载压枪配置", command=self.reload_recoil_config, is_toggle=False, text_size=self.font_large)
+        self.btn_reload_recoil.pack(pady=3)
 
-        tk.Label(self.launch_tab, text="--启用特殊武器助手--", bg="#F9FAFB", fg="#6B7280", font=("Microsoft YaHei", self.font_status, "bold")).pack(pady=5)
+        tk.Label(self.launch_tab, text="--启用特殊武器助手--", bg="#DDE6F0", fg="#6B7280", font=("Microsoft YaHei", self.font_status, "bold")).pack(pady=4)
 
         assistants = [
             ("迫击炮", "mortar"),
@@ -482,18 +579,22 @@ class TacticalHub:
             ("C4", "c4")
         ]
         self.assistant_btns = {}
-        frame = tk.Frame(self.launch_tab, bg="#F9FAFB")
-        frame.pack(pady=6) 
+        frame = tk.Frame(self.launch_tab, bg="#DDE6F0")
+        frame.pack(pady=2) 
         for i, (name, key) in enumerate(assistants):
-            btn = RoundedButton(frame, 107, 30, 25, name, command=lambda k=key: self.toggle_assistant(k), is_toggle=True, text_size=self.font_small)
-            btn.grid(row=i//2, column=i%2, padx=3, pady=5)
+            btn = RoundedButton(frame, 128, 29, 21, name, command=lambda k=key: self.toggle_assistant(k), is_toggle=True, text_size=self.font_small)
+            btn.grid(row=i//2, column=i%2, padx=2, pady=3)
             self.assistant_btns[key] = btn
 
 
     def build_calib_tab(self):
         
-        self.btn_debug = RoundedButton(self.calib_tab, 220, 30, 25, "显示所有识别区域框", command=self.toggle_debug, is_toggle=True, text_size=self.font_small)
-        self.btn_debug.grid(row=0, column=0, columnspan=2, pady=2)
+        self.calib_tab.columnconfigure(0, weight=1, uniform="calib")
+        self.calib_tab.columnconfigure(1, weight=1, uniform="calib")
+        self.btn_debug = RoundedButton(self.calib_tab, 128, 26, 19, "显示所有区域框", command=self.toggle_debug, is_toggle=True, text_size=self.font_small)
+        self.btn_debug.grid(row=0, column=0, padx=2, pady=2, sticky="ew")
+        self.btn_auto_scale = RoundedButton(self.calib_tab, 128, 26, 19, "打开缩放校准窗口", command=self.open_auto_scale_calibrator, is_toggle=False, text_size=self.font_small)
+        self.btn_auto_scale.grid(row=0, column=1, padx=2, pady=2, sticky="ew")
 
         # 原有六个区域按钮列表（名称和区域键）
         existing_items = [
@@ -511,23 +612,23 @@ class TacticalHub:
             # 左列按钮
             name1, key1 = existing_items[i]
             if key1 == "largemap_1km_px":
-                btn1 = RoundedButton(self.calib_tab, 107, 28, 25, f"校准{name1}",
+                btn1 = RoundedButton(self.calib_tab, 128, 26, 19, f"校准{name1}",
                                     command=lambda: self.region_manager.calibrate_scale("largemap_1km_px"), text_size=self.font_small)
             else:
-                btn1 = RoundedButton(self.calib_tab, 107, 28, 25, f"校准{name1}",
+                btn1 = RoundedButton(self.calib_tab, 128, 26, 19, f"校准{name1}",
                                     command=lambda k=key1: self.region_manager.calibrate_region(k), text_size=self.font_small)
-            btn1.grid(row=row, column=0, padx=5, pady=2, sticky="ew")
+            btn1.grid(row=row, column=0, padx=2, pady=2, sticky="ew")
 
             # 右列按钮
             if i+1 < len(existing_items):
                 name2, key2 = existing_items[i+1]
                 if key2 == "largemap_1km_px":
-                    btn2 = RoundedButton(self.calib_tab, 107, 28, 25, f"校准{name2}",
+                    btn2 = RoundedButton(self.calib_tab, 128, 26, 19, f"校准{name2}",
                                         command=lambda: self.region_manager.calibrate_scale("largemap_1km_px"), text_size=self.font_small)
                 else:
-                    btn2 = RoundedButton(self.calib_tab, 107, 28, 25, f"校准{name2}",
+                    btn2 = RoundedButton(self.calib_tab, 128, 26, 19, f"校准{name2}",
                                         command=lambda k=key2: self.region_manager.calibrate_region(k), text_size=self.font_small)
-                btn2.grid(row=row, column=1, padx=5, pady=2, sticky="ew")
+                btn2.grid(row=row, column=1, padx=2, pady=2, sticky="ew")
             row += 1
 
         # 武器1 和 武器2 的项（每个武器6项）
@@ -551,67 +652,85 @@ class TacticalHub:
         for i in range(6):
             # 武器1按钮
             name1, key1 = weapon1_items[i]
-            btn1 = RoundedButton(self.calib_tab, 107, 28, 25, f"校准{name1}",
+            btn1 = RoundedButton(self.calib_tab, 128, 26, 19, f"校准{name1}",
                                 command=lambda k=key1: self.region_manager.calibrate_region(k), text_size=self.font_small)
-            btn1.grid(row=row, column=0, padx=5, pady=2, sticky="ew")
+            btn1.grid(row=row, column=0, padx=2, pady=2, sticky="ew")
             # 武器2按钮
             name2, key2 = weapon2_items[i]
-            btn2 = RoundedButton(self.calib_tab, 107, 28, 25, f"校准{name2}",
+            btn2 = RoundedButton(self.calib_tab, 128, 26, 19, f"校准{name2}",
                                 command=lambda k=key2: self.region_manager.calibrate_region(k), text_size=self.font_small)
-            btn2.grid(row=row, column=1, padx=5, pady=2, sticky="ew")
+            btn2.grid(row=row, column=1, padx=2, pady=2, sticky="ew")
             row += 1
             
     def build_key_tab(self):
-        self.key_frame = tk.Frame(self.key_tab, bg="#F9FAFB")
-        self.key_frame.pack(fill="both", expand=True, padx=5, pady=1)
+        self.key_frame = tk.Frame(self.key_tab, bg="#DDE6F0")
+        self.key_frame.pack(fill="both", expand=True, padx=0, pady=2)
 
         key_configs = [
-            ("手雷瞬爆", "throw"),
-            ("辅助显示开关", "toggle_display"),
-            ("大地图测距", "measure_map"),
-            ("辅助压枪开关", "toggle_recoil"),
-            ("武器检测开关", "toggle_weapon_detection"),
-            ("打开装备栏", "toggle_equipment"),
+            ("手雷瞬爆", "throw", True),
+            ("辅助显示开关", "toggle_display", True),
+            ("大地图测距", "measure_map", True),
+            ("辅助压枪开关", "toggle_recoil", True),
+            ("武器检测开关", "toggle_weapon_detection", True),
+            ("打开装备栏", "toggle_equipment", True),
+            ("标点向前切换", "marker_prev", True),
+            ("标点向后切换", "marker_next", True),
+            ("地图点位显示", "mouse_map_assist", False),
         ]
         self.key_labels = {}
 
-        for label, action in key_configs:
+        for label, action, editable in key_configs:
             # 每个功能使用一个容器 Frame
-            func_frame = tk.Frame(self.key_frame, bg="#F9FAFB")
+            func_frame = tk.Frame(self.key_frame, bg="#DDE6F0")
             func_frame.pack(fill="x", pady=1)
 
-            left_frame = tk.Frame(func_frame, bg="#F9FAFB")
+            left_frame = tk.Frame(func_frame, bg="#DDE6F0")
             left_frame.pack(side="left", fill="both", expand=True)
 
             # 描述标签
-            desc_label = tk.Label(left_frame, text=label, bg="#F9FAFB", fg="#333333", font=("Microsoft YaHei", self.font_status, "bold"))
-            desc_label.pack(anchor="w")
+            desc_label = tk.Label(left_frame, text=label, bg="#DDE6F0", fg="#333333", font=("Microsoft YaHei", self.font_status, "bold"))
+            desc_label.pack(side=tk.LEFT, anchor="w")
 
             # 快捷键显示
-            current_key = self.format_hotkey(self.hotkeys[action])
-            key_label = tk.Label(left_frame, text=current_key, bg="#F9FAFB", fg="#2563EB", font=("Consolas", self.font_status, "bold"))
-            key_label.pack(anchor="w", pady=(1, 0))
-            self.key_labels[action] = key_label
+            current_key = self.format_hotkey(self.hotkeys[action]) if editable else "鼠标左键 + 中键"
+            key_label = tk.Label(left_frame, text=current_key, bg="#DDE6F0", fg="#2563EB", font=("Consolas", self.font_status, "bold"))
+            key_label.pack(side=tk.LEFT, padx=(6, 0))
+            if editable:
+                self.key_labels[action] = key_label
 
             # 右侧：录制按钮
-            record_btn = RoundedButton(func_frame, 60, 30, 25, "录制", 
-                                    command=lambda a=action, lbl=key_label: self.capture_hotkey(a, lbl), 
-                                    is_toggle=False, text_size=self.font_small)
-            record_btn.pack(side="right", padx=2)
+            if editable:
+                record_btn = RoundedButton(func_frame, 50, 26, 19, "录制", 
+                                        command=lambda a=action, lbl=key_label: self.capture_hotkey(a, lbl), 
+                                        is_toggle=False, text_size=self.font_small)
+                record_btn.pack(side="right", padx=0)
 
         # 保存快捷键按钮
-        btn_frame = tk.Frame(self.key_frame, bg="#F9FAFB")
-        btn_frame.pack(pady=3)
-        save_btn = RoundedButton(btn_frame, 107, 30, 25, "保存快捷键", 
+        btn_frame = tk.Frame(self.key_frame, bg="#DDE6F0")
+        btn_frame.pack(side=tk.BOTTOM, pady=(2, 0))
+        save_btn = RoundedButton(btn_frame, 128, 28, 20, "保存快捷键", 
                                 command=self.save_hotkey_config, is_toggle=False, text_size=self.font_small)
-        save_btn.pack(side=tk.LEFT, padx=5)
-        default_btn = RoundedButton(btn_frame, 107, 30, 25, "恢复默认", 
+        save_btn.pack(side=tk.LEFT, padx=2)
+        default_btn = RoundedButton(btn_frame, 128, 28, 20, "恢复默认", 
                                     command=self.reset_default_hotkeys, is_toggle=False, text_size=self.font_small)
-        default_btn.pack(side=tk.LEFT, padx=5)
-        default_btn.pack(pady=1)
+        default_btn.pack(side=tk.LEFT, padx=2)
     
     def reload_recoil_config(self):
         self.recoil.reload_config()
+
+    def open_auto_scale_calibrator(self):
+        if not open_region_scaling_auto_calibrator:
+            print("[缩放校准] region_calibrator_auto 模块不可用")
+            return
+        app = open_region_scaling_auto_calibrator(self.root)
+        self.auto_calibrator_windows.append(app)
+
+        def on_close():
+            if app in self.auto_calibrator_windows:
+                self.auto_calibrator_windows.remove(app)
+            app.root.destroy()
+
+        app.root.protocol("WM_DELETE_WINDOW", on_close)
 
     def toggle_assistant(self, key):
         module = self.special_assistant_modules.get(key)
@@ -968,7 +1087,7 @@ class TacticalHub:
         new_state = not self.region_manager.show_debug
         self.region_manager.set_debug_mode(new_state)
         self.btn_debug.set_active(new_state)
-        self.btn_debug.set_text(f"{'关闭' if new_state else '开启'}显示所有区域框")
+        self.btn_debug.set_text("显示所有区域框")
 
     def start_listeners(self):
         self.keyboard_listener = keyboard.Listener(on_press=self.on_key_press, on_release=self.on_key_release)
@@ -980,6 +1099,8 @@ class TacticalHub:
             self.hotkeys['measure_map']: lambda: self.root.after(0, self.largemap_radar.toggle_mode),
             self.hotkeys['toggle_recoil']: lambda: self.root.after(0, self.toggle_recoil),
             self.hotkeys['toggle_weapon_detection']: lambda: self.root.after(0, self.toggle_weapon_detection),
+            self.hotkeys['marker_prev']: lambda: self.root.after(0, self._cycle_marker_hotkey, -1),
+            self.hotkeys['marker_next']: lambda: self.root.after(0, self._cycle_marker_hotkey, 1),
         }
         self.hotkey_listener = keyboard.GlobalHotKeys(hotkey_mapping)
         self.hotkey_listener.start()
@@ -1008,25 +1129,21 @@ class TacticalHub:
                     self.root.withdraw()
                 else:
                     self.root.deiconify()
+                    self._schedule_window_rounding()
                     self.root.lift()
                     self.root.focus_force()
                 return
         except:
             pass
+        if key in (keyboard.Key.left, keyboard.Key.right) and not self._is_capturing:
+            try:
+                if self.root.state() == 'normal':
+                    self.root.after(0, self.switch_tab, -1 if key == keyboard.Key.left else 1)
+                    return
+            except Exception:
+                pass
         if key in (keyboard.Key.alt_l, keyboard.Key.alt_r):
             self.alt_pressed = True
-
-        marker_char = None
-        if hasattr(key, 'char') and key.char:
-            marker_char = key.char.lower()
-        elif hasattr(key, 'vk') and key.vk is not None:
-            if key.vk == 81:
-                marker_char = 'q'
-            elif key.vk == 69:
-                marker_char = 'e'
-        if marker_char in ['q', 'e'] and self._should_show_marker_indicator():
-            self.cycle_marker_color(-1 if marker_char == 'q' else 1)
-            return
 
         equip_key = self.hotkeys['toggle_equipment']
         equip_parts = equip_key.split('+')
@@ -1064,10 +1181,12 @@ class TacticalHub:
         elif button == mouse.Button.middle:
             self.middle_pressed = pressed
 
-        if self.left_pressed and self.middle_pressed:
+        if self.left_pressed and self.middle_pressed and self.current_weapon is None:
             if not self.map_assist.is_enabled:
                 self.map_assist.set_enabled(True)
         else:
+            if self.current_weapon is not None and self.map_assist.is_enabled:
+                self.map_assist.set_enabled(False)
             if button == mouse.Button.right and pressed:
                 if not self.alt_pressed:
                     if self.map_assist.is_enabled:
@@ -1103,6 +1222,8 @@ class TacticalHub:
             "toggle_display": "<f2>",
             "toggle_recoil": "<f3>",
             "measure_map": "<f4>",
+            "marker_prev": "q",
+            "marker_next": "e",
             "toggle_equipment": "tab"
         }
         self.save_hotkey_config()
@@ -1136,9 +1257,12 @@ class TacticalHub:
         self.c4_assistant.shutdown()   # 关闭 C4 助手
         if self.status_overlay:
             self.status_overlay.destroy()
-        self.keyboard_listener.stop()
-        self.mouse_listener.stop()
-        self.hotkey_listener.stop()
+        for listener in [getattr(self, "keyboard_listener", None), getattr(self, "mouse_listener", None), getattr(self, "hotkey_listener", None)]:
+            if listener:
+                try:
+                    listener.stop()
+                except Exception:
+                    pass
         self.root.destroy()
 
 if __name__ == "__main__":
