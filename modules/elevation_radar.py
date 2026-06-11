@@ -45,6 +45,11 @@ class ElevationRadarModule:
             except:
                 pass
 
+    def set_pnt_colors(self, colors):
+        self.colors = colors
+        self.valid_colors = set(colors.keys())
+        self.measured_elevations = {c: self.measured_elevations.get(c) for c in colors.keys()}
+
     def _init_overlay(self):
         self.overlay = tk.Toplevel(self.root)
         self.overlay.attributes("-fullscreen", True, "-topmost", True, "-transparentcolor", "black")

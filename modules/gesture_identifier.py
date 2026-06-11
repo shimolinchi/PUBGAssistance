@@ -170,9 +170,8 @@ class GestureIdentifier:
                             if self.current_gesture != gesture:
                                 self.current_gesture = gesture
                                 self.current_score = score
-                                gesture_display = self.gesture_names.get(gesture, gesture)
                                 if self._callback:
-                                    self._callback(gesture_display, score)
+                                    self._callback(gesture, score)
                     else:
                         self.pending_gesture = gesture
                         self.pending_score = score

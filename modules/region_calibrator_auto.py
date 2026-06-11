@@ -228,6 +228,17 @@ class RegionScalingAutoCalibrator(RegionScalingCalibrator):
                 )
             )
 
+    def update_display(self):
+        try:
+            if not self.root.winfo_exists():
+                return
+            for canvas in (self.orig_canvas, self.scaled_canvas, self.template_canvas):
+                if not canvas.winfo_exists():
+                    return
+            super().update_display()
+        except tk.TclError:
+            return
+
 
     def start_auto_calibration(self):
         if self.current_frame is None:

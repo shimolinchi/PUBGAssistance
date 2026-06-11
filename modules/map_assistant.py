@@ -41,14 +41,11 @@ MAP_DATA = {
     }
 }
 
-POINT_CONFIG = {
-    "planes": {"name": "飞机点位", "color": "#FFA500"},
-    "rooms": {"name": "密室位置", "color": "#FF0000"},
-    "vehicles": {"name": "固定刷车", "color": "#00FFFF"},
-    "bear_caves": {"name": "熊洞位置", "color": "#8B4513"},
-    "crowbar_rooms": {"name": "撬棍房", "color": "#FF69B4"},
-    "lab_camps": {"name": "实验营地", "color": "#32CD32"},
-    "safty_doors": {"name": "安全门", "color": "#FF0000"}
+POINT_GROUPS = {
+    "vehicles": {"name": "载具", "keys": ["vehicles"], "color": "#00CFFF"},
+    "planes": {"name": "飞机", "keys": ["planes"], "color": "#FFB000"},
+    "rooms": {"name": "密室", "keys": ["rooms"], "color": "#00FF66"},
+    "other": {"name": "其他", "keys": ["bear_caves", "crowbar_rooms", "lab_camps", "safty_doors"], "color": "#FF4DFF"},
 }
 
 
@@ -64,7 +61,7 @@ class MapPointAssistant:
 
         self.is_enabled = False
         self.current_map_name = "艾伦格 (Erangel)"
-        self.active_categories = {"vehicles", "planes", "rooms", "bear_caves", "crowbar_rooms", "lab_camps", "safty_doors"}
+        self.active_groups = set(POINT_GROUPS.keys())
         self.current_marker_size = "medium"
 
         self.overlay = None
@@ -100,6 +97,13 @@ class MapPointAssistant:
 
     def set_marker_size(self, size_str):
         self.current_marker_size = size_str
+        self._render_points()
+
+    def set_category_enabled(self, group_key, enabled):
+        if enabled:
+            self.active_groups.add(group_key)
+        else:
+            self.active_groups.discard(group_key)
         self._render_points()
 
     def set_map(self, map_name):
@@ -138,20 +142,39 @@ class MapPointAssistant:
         else:  # large
             r, fill_active, line_width = 4, False, 3
 
-        for cat_key in self.active_categories:
-            if cat_key not in current_map_data:
+        legend_items = []
+        for group_key, group in POINT_GROUPS.items():
+            if group_key not in self.active_groups:
                 continue
-            color = POINT_CONFIG.get(cat_key, {"color": "white"})["color"]
-            for norm_x, norm_y in current_map_data[cat_key]:
-                screen_x = cx + norm_x * half_side
-                screen_y = cy - norm_y * half_side
-                if fill_active:
-                    self.canvas.create_oval(screen_x - r, screen_y - r,
-                                            screen_x + r, screen_y + r,
-                                            fill=color, outline="black", width=line_width,
-                                            tags="map_point")
-                else:
-                    self.canvas.create_oval(screen_x - r, screen_y - r,
-                                            screen_x + r, screen_y + r,
-                                            fill="", outline=color, width=line_width,
-                                            tags="map_point")
+            existing_keys = [key for key in group["keys"] if key in current_map_data]
+            if not existing_keys:
+                continue
+            color = group["color"]
+            legend_items.append((group["name"], color))
+            for cat_key in existing_keys:
+                for norm_x, norm_y in current_map_data[cat_key]:
+                    screen_x = cx + norm_x * half_side
+                    screen_y = cy - norm_y * half_side
+                    if fill_active:
+                        self.canvas.create_oval(screen_x - r, screen_y - r,
+                                                screen_x + r, screen_y + r,
+                                                fill=color, outline="black", width=line_width,
+                                                tags="map_point")
+                    else:
+                        self.canvas.create_oval(screen_x - r, screen_y - r,
+                                                screen_x + r, screen_y + r,
+                                                fill="", outline=color, width=line_width,
+                                                tags="map_point")
+        self._draw_legend(legend_items)
+
+    def _draw_legend(self, items):
+        if not items:
+            return
+        x = 35
+        y = 42
+        row_h = 22
+        font = ("Microsoft YaHei", 13, "bold")
+        for idx, (name, color) in enumerate(items):
+            cy = y + idx * row_h
+            self.canvas.create_oval(x, cy - 5, x + 10, cy + 5, fill=color, outline=color, tags="map_point")
+            self.canvas.create_text(x + 18, cy, text=name, fill=color, font=font, anchor="w", tags="map_point")

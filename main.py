@@ -108,7 +108,7 @@ class TacticalHub:
         
         self.root.title("PUBG 战术助手")
         self.window_width = 280
-        self.window_height = 380
+        self.window_height = 372
         self.window_radius = 18
         self.root.geometry(f"{self.window_width}x{self.window_height}")
         self.root.minsize(self.window_width, self.window_height)
@@ -154,11 +154,8 @@ class TacticalHub:
 
         self.weapon_detector = WeaponDetector(self.region_manager, fps=30, match_threshold=0.55)
         self.recoil = RecoilControlModuleNew(config_file=self.config_file)
-        self.gesture_id = GestureIdentifier(region_manager=self.region_manager)
-        self.equipment_detector = EquipmentDetector(
-            self.region_manager, fps=30, idle_timeout=10.0, debug=False,
-            on_status_change=self.on_equipment_status
-        )
+        self.gesture_id = GestureIdentifier(region_manager=self.region_manager, match_threshold=0.55, fps=30)
+        self.equipment_detector = EquipmentDetector(self.region_manager, fps=30, idle_timeout=10.0, on_status_change=self.on_equipment_status)
 
         # 新增：C4 助手
         self.c4_assistant = C4Assistant(
@@ -168,7 +165,7 @@ class TacticalHub:
             fps=30,
             explosion_margin=2.0,
             target_speed=50.0,
-            jump_distance_threshold=20.0   # 推荐跳车距离（米）
+            jump_distance_threshold=20.0
         )
         self.special_assistant_modules = {
             "mortar": self.mortar,
@@ -186,25 +183,20 @@ class TacticalHub:
             "C4": "c4"
         }
         self.manual_assistant_keys = set()
+        self.map_point_groups = {"vehicles": True, "planes": True, "rooms": True, "other": True}
         self.marker_color_order = ["Yellow", "Orange", "Blue", "Green"]
         self.current_marker_color = "Yellow"
-        self.marker_color_hex = {
-            "Yellow": "#E9E511",
-            "Orange": "#DA6226",
-            "Blue": "#017BC2",
-            "Green": "#0F9D16"
-        }
+        self.pnt_color_modes = self._default_pnt_color_modes()
+        self.current_pnt_color_mode = "normal"
+        self.load_pnt_color_config()
+        self.marker_color_hex = self._pnt_hex_map(self.pnt_color_modes[self.current_pnt_color_mode])
         self.status_text_opacity = 0.7
-        self.marker_color_bgr = {
-            "Yellow": (17, 229, 233),
-            "Orange": (38, 98, 218),
-            "Blue": (194, 123, 1),
-            "Green": (22, 157, 15)
-        }
+        self.marker_color_bgr = {name: self._hex_to_bgr(hex_color) for name, hex_color in self.marker_color_hex.items()}
         self.marker_icon_img = None
         self.current_marker_icon = None
         self._load_marker_icon()
         self._sync_marker_color_to_assistants()
+        self._sync_pnt_colors_to_modules()
 
         # 状态变量
         self.weapon_detection_enabled = True
@@ -280,7 +272,7 @@ class TacticalHub:
             self.update_status_display()
 
         def on_gesture_identified(gesture, score):
-            if gesture and score >= 0.7:
+            if gesture:
                 self.current_gesture = gesture
                 if self.recoil_enabled:
                     self.recoil.update_stance(gesture)
@@ -328,6 +320,89 @@ class TacticalHub:
             self.root.iconbitmap(icon_path)
         except Exception as e:
             print(f"警告: 无法加载图标 - {e}")
+
+    def _default_pnt_color_modes(self):
+        return {
+            "normal": {
+                "Yellow": {"lower": [28, 150, 160], "upper": [32, 255, 255], "hex": "#ABA809"},
+                "Orange": {"lower": [8, 160, 160], "upper": [12, 255, 255], "hex": "#A04619"},
+                "Blue": {"lower": [99, 120, 160], "upper": [103, 255, 255], "hex": "#28749F"},
+                "Green": {"lower": [60, 150, 120], "upper": [64, 255, 255], "hex": "#2F8433"},
+            },
+            "deuteranopia": {
+                "Yellow": {"lower": [26, 150, 160], "upper": [30, 255, 255], "hex": "#B9AE15"},
+                "Orange": {"lower": [11, 160, 160], "upper": [15, 255, 255], "hex": "#A15519"},
+                "Blue": {"lower": [107, 120, 160], "upper": [111, 255, 255], "hex": "#0046BC"},
+                "Green": {"lower": [78, 150, 120], "upper": [82, 255, 255], "hex": "#01B377"},
+            },
+            "protanopia": {
+                "Yellow": {"lower": [26, 150, 160], "upper": [30, 255, 255], "hex": "#B9AE15"},
+                "Orange": {"lower": [10, 160, 160], "upper": [14, 255, 255], "hex": "#B3500D"},
+                "Blue": {"lower": [110, 120, 160], "upper": [114, 255, 255], "hex": "#1A3FA4"},
+                "Green": {"lower": [78, 150, 120], "upper": [82, 255, 255], "hex": "#109166"},
+            },
+            "tritanopia": {
+                "Yellow": {"lower": [26, 150, 160], "upper": [30, 255, 255], "hex": "#E3D43C"},
+                "Orange": {"lower": [3, 160, 160], "upper": [7, 255, 255], "hex": "#B14732"},
+                "Blue": {"lower": [105, 120, 160], "upper": [109, 255, 255], "hex": "#2E5689"},
+                "Green": {"lower": [87, 150, 120], "upper": [91, 255, 255], "hex": "#009995"},
+            },
+        }
+
+    def _pnt_hex_map(self, colors):
+        return {name: data.get("hex", "#FFFFFF") for name, data in colors.items()}
+
+    def _hex_to_bgr(self, hex_color):
+        hex_color = hex_color.lstrip("#")
+        return (int(hex_color[4:6], 16), int(hex_color[2:4], 16), int(hex_color[0:2], 16))
+
+    def load_pnt_color_config(self):
+        if os.path.exists(self.config_file):
+            try:
+                with open(self.config_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    self.pnt_color_modes.update(data.get("pnt_color_modes", {}))
+                    mode = data.get("pnt_color_mode", self.current_pnt_color_mode)
+                    if mode in self.pnt_color_modes:
+                        self.current_pnt_color_mode = mode
+            except Exception:
+                pass
+
+    def save_pnt_color_config(self):
+        data = {}
+        if os.path.exists(self.config_file):
+            try:
+                with open(self.config_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+            except Exception:
+                data = {}
+        data["pnt_color_mode"] = self.current_pnt_color_mode
+        data["pnt_color_modes"] = self.pnt_color_modes
+        data["pnt_colors"] = self.pnt_color_modes[self.current_pnt_color_mode]
+        with open(self.config_file, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=4, ensure_ascii=False)
+
+    def _sync_pnt_colors_to_modules(self):
+        colors = self.pnt_color_modes[self.current_pnt_color_mode]
+        for module in [
+            self.minimap, self.elevation, self.largemap_radar, self.mortar,
+            self.rocket, self.throwables, self.vss_assist, self.crossbow_assist,
+            self.c4_assistant,
+        ]:
+            if hasattr(module, "set_pnt_colors"):
+                module.set_pnt_colors(colors)
+
+    def select_pnt_color_mode(self, mode):
+        if mode not in self.pnt_color_modes:
+            return
+        self.current_pnt_color_mode = mode
+        self.marker_color_hex = self._pnt_hex_map(self.pnt_color_modes[mode])
+        self.marker_color_bgr = {name: self._hex_to_bgr(hex_color) for name, hex_color in self.marker_color_hex.items()}
+        self.save_pnt_color_config()
+        self._sync_pnt_colors_to_modules()
+        for mode_key, button in getattr(self, "pnt_mode_buttons", {}).items():
+            button.set_active(mode_key == mode)
+        self.update_status_display()
 
     def _load_marker_icon(self):
         if not PIL_AVAILABLE:
@@ -419,6 +494,7 @@ class TacticalHub:
 
         self.map_tab = self._add_tab("地图点位")
         self.map_tab.columnconfigure(0, weight=1)
+        self.map_tab.columnconfigure(1, weight=1)
         self.build_map_tab()
 
         self.launch_tab = self._add_tab("启动助手")
@@ -438,7 +514,7 @@ class TacticalHub:
     def _add_tab(self, text):
         idx = len(self.tab_frames)
         frame = tk.Frame(self.content_frame, bg="#DDE6F0")
-        btn = RoundedButton(self.tab_bar, 62, 28, 18, text, command=lambda i=idx: self.select_tab(i), is_toggle=True, text_size=self.font_status)
+        btn = RoundedButton(self.tab_bar, 61, 28, 18, text, command=lambda i=idx: self.select_tab(i), is_toggle=True, text_size=self.font_status)
         btn.pack(side=tk.LEFT, padx=2)
         self.tab_frames.append(frame)
         self.tab_buttons.append(btn)
@@ -521,51 +597,83 @@ class TacticalHub:
         size_key = ["small", "medium", "large"][idx]
         self.map_assist.set_marker_size(size_key)
 
+    def toggle_map_point_group(self, group_key):
+        next_state = not self.map_point_groups.get(group_key, True)
+        self.map_point_groups[group_key] = next_state
+        self.map_assist.set_category_enabled(group_key, next_state)
+        if group_key in self.map_point_group_buttons:
+            self.map_point_group_buttons[group_key].set_active(next_state)
+
     def build_map_tab(self):
         self.map_names = [
             "艾伦格 (Erangel)", "米拉玛 (Miramar)", "泰戈 (Taego)",
             "荣都 (Rondo)", "帝斯顿 (Deston)", "维寒迪 (Vikendi)"
         ]
+        self.map_tab.rowconfigure(5, weight=0)
         self.map_buttons = []
 
-        # 地图按钮（单列居中）
+        # 地图按钮（两列紧凑排列）
         for i, map_name in enumerate(self.map_names):
             short_name = map_name.split()[0]
-            # 创建容器 Frame，使按钮能够居中
-            container = tk.Frame(self.map_tab, bg="#DDE6F0")
-            container.grid(row=i, column=0, sticky="ew", padx=0, pady=3)
-            container.columnconfigure(0, weight=1)   # 容器内水平扩展
-            btn = RoundedButton(container, 264, 32, 22, map_name,
+            btn = RoundedButton(self.map_tab, 126, 30, 22, short_name,
                                 command=lambda idx=i: self.select_map(idx), is_toggle=True,text_size=self.font_small)
-            btn.pack(anchor="center")               # 按钮在容器内水平居中
+            btn.grid(row=i//2, column=i%2, padx=2, pady=3, sticky="ew")
             self.map_buttons.append(btn)
 
         # 标点尺寸标签
         tk.Label(self.map_tab, text="--标点尺寸--", bg="#DDE6F0", fg="#6B7280", font=("Microsoft YaHei", self.font_status, "bold")).grid(
-            row=len(self.map_names), column=0, pady=5
+            row=3, column=0, columnspan=2, pady=(4, 3)
         )
         # 标点尺寸按钮（水平排列）
         size_frame = tk.Frame(self.map_tab, bg="#DDE6F0")
-        size_frame.grid(row=len(self.map_names)+1, column=0, pady=5)
+        size_frame.grid(row=4, column=0, columnspan=2, pady=(0, 4))
         self.size_buttons = []
         sizes = [("小", "small"), ("中", "medium"), ("大", "large")]
         for i, (name, val) in enumerate(sizes):
-            btn = RoundedButton(size_frame, 82, 30, 21, name,
+            btn = RoundedButton(size_frame, 81, 30, 22, name,
                                 command=lambda idx=i: self.select_size(idx), is_toggle=True, text_size=self.font_small)
             btn.grid(row=0, column=i, padx=3)
             self.size_buttons.append(btn)
+
+        tk.Label(self.map_tab, text="--色盲选择--", bg="#DDE6F0", fg="#6B7280", font=("Microsoft YaHei", self.font_status, "bold")).grid(
+            row=5, column=0, columnspan=2, pady=(2, 3)
+        )
+        mode_frame = tk.Frame(self.map_tab, bg="#DDE6F0")
+        mode_frame.grid(row=6, column=0, columnspan=2, pady=(0, 0))
+        self.pnt_mode_buttons = {}
+        modes = [("无色盲", "normal"), ("绿色盲", "deuteranopia"), ("红色盲", "protanopia"), ("蓝色盲", "tritanopia")]
+        for i, (name, mode) in enumerate(modes):
+            btn = RoundedButton(mode_frame, 61, 30, 22, name,
+                                command=lambda m=mode: self.select_pnt_color_mode(m), is_toggle=True, text_size=self.font_status)
+            btn.grid(row=0, column=i, padx=2)
+            btn.set_active(mode == self.current_pnt_color_mode)
+            self.pnt_mode_buttons[mode] = btn
+
+        tk.Label(self.map_tab, text="--点位类型--", bg="#DDE6F0", fg="#6B7280", font=("Microsoft YaHei", self.font_status, "bold")).grid(
+            row=7, column=0, columnspan=2, pady=(4, 3)
+        )
+        group_frame = tk.Frame(self.map_tab, bg="#DDE6F0")
+        group_frame.grid(row=8, column=0, columnspan=2, pady=(0, 0))
+        self.map_point_group_buttons = {}
+        groups = [("载具", "vehicles"), ("飞机", "planes"), ("密室", "rooms"), ("其他", "other")]
+        for i, (name, group_key) in enumerate(groups):
+            btn = RoundedButton(group_frame, 61, 30, 22, name,
+                                command=lambda g=group_key: self.toggle_map_point_group(g), is_toggle=True, text_size=self.font_status)
+            btn.grid(row=0, column=i, padx=2)
+            btn.set_active(True)
+            self.map_point_group_buttons[group_key] = btn
 
         self.select_map(0)
         self.select_size(1)
 
     def build_launch_tab(self):
-        self.btn_weapon_detect = RoundedButton(self.launch_tab, 264, 34, 24, "开启武器检测", command=self.toggle_weapon_detection, is_toggle=True, text_size=self.font_large)
+        self.btn_weapon_detect = RoundedButton(self.launch_tab, 256, 34, 24, "开启武器检测", command=self.toggle_weapon_detection, is_toggle=True, text_size=self.font_large)
         self.btn_weapon_detect.pack(pady=3)
-        self.btn_display = RoundedButton(self.launch_tab, 264, 34, 24, "开启瞄准辅助", command=self.toggle_display, is_toggle=True, text_size=self.font_large)
+        self.btn_display = RoundedButton(self.launch_tab, 256, 34, 24, "开启瞄准辅助", command=self.toggle_display, is_toggle=True, text_size=self.font_large)
         self.btn_display.pack(pady=3)
-        self.btn_recoil = RoundedButton(self.launch_tab, 264, 34, 24, "开启辅助压枪", command=self.toggle_recoil, is_toggle=True, text_size=self.font_large)
+        self.btn_recoil = RoundedButton(self.launch_tab, 256, 34, 24, "开启辅助压枪", command=self.toggle_recoil, is_toggle=True, text_size=self.font_large)
         self.btn_recoil.pack(pady=3)
-        self.btn_reload_recoil = RoundedButton(self.launch_tab, 264, 34, 24, "重新加载压枪配置", command=self.reload_recoil_config, is_toggle=False, text_size=self.font_large)
+        self.btn_reload_recoil = RoundedButton(self.launch_tab, 256, 34, 24, "重新加载压枪配置", command=self.reload_recoil_config, is_toggle=False, text_size=self.font_large)
         self.btn_reload_recoil.pack(pady=3)
 
         tk.Label(self.launch_tab, text="--启用特殊武器助手--", bg="#DDE6F0", fg="#6B7280", font=("Microsoft YaHei", self.font_status, "bold")).pack(pady=4)
@@ -582,7 +690,7 @@ class TacticalHub:
         frame = tk.Frame(self.launch_tab, bg="#DDE6F0")
         frame.pack(pady=2) 
         for i, (name, key) in enumerate(assistants):
-            btn = RoundedButton(frame, 128, 29, 21, name, command=lambda k=key: self.toggle_assistant(k), is_toggle=True, text_size=self.font_small)
+            btn = RoundedButton(frame, 126, 29, 21, name, command=lambda k=key: self.toggle_assistant(k), is_toggle=True, text_size=self.font_small)
             btn.grid(row=i//2, column=i%2, padx=2, pady=3)
             self.assistant_btns[key] = btn
 
@@ -591,9 +699,9 @@ class TacticalHub:
         
         self.calib_tab.columnconfigure(0, weight=1, uniform="calib")
         self.calib_tab.columnconfigure(1, weight=1, uniform="calib")
-        self.btn_debug = RoundedButton(self.calib_tab, 128, 26, 19, "显示所有区域框", command=self.toggle_debug, is_toggle=True, text_size=self.font_small)
+        self.btn_debug = RoundedButton(self.calib_tab, 126, 26, 19, "显示所有区域框", command=self.toggle_debug, is_toggle=True, text_size=self.font_small)
         self.btn_debug.grid(row=0, column=0, padx=2, pady=2, sticky="ew")
-        self.btn_auto_scale = RoundedButton(self.calib_tab, 128, 26, 19, "打开缩放校准窗口", command=self.open_auto_scale_calibrator, is_toggle=False, text_size=self.font_small)
+        self.btn_auto_scale = RoundedButton(self.calib_tab, 126, 26, 19, "打开缩放校准窗口", command=self.open_auto_scale_calibrator, is_toggle=False, text_size=self.font_small)
         self.btn_auto_scale.grid(row=0, column=1, padx=2, pady=2, sticky="ew")
 
         # 原有六个区域按钮列表（名称和区域键）
@@ -612,10 +720,10 @@ class TacticalHub:
             # 左列按钮
             name1, key1 = existing_items[i]
             if key1 == "largemap_1km_px":
-                btn1 = RoundedButton(self.calib_tab, 128, 26, 19, f"校准{name1}",
+                btn1 = RoundedButton(self.calib_tab, 126, 26, 19, f"校准{name1}",
                                     command=lambda: self.region_manager.calibrate_scale("largemap_1km_px"), text_size=self.font_small)
             else:
-                btn1 = RoundedButton(self.calib_tab, 128, 26, 19, f"校准{name1}",
+                btn1 = RoundedButton(self.calib_tab, 126, 26, 19, f"校准{name1}",
                                     command=lambda k=key1: self.region_manager.calibrate_region(k), text_size=self.font_small)
             btn1.grid(row=row, column=0, padx=2, pady=2, sticky="ew")
 
@@ -623,10 +731,10 @@ class TacticalHub:
             if i+1 < len(existing_items):
                 name2, key2 = existing_items[i+1]
                 if key2 == "largemap_1km_px":
-                    btn2 = RoundedButton(self.calib_tab, 128, 26, 19, f"校准{name2}",
+                    btn2 = RoundedButton(self.calib_tab, 126, 26, 19, f"校准{name2}",
                                         command=lambda: self.region_manager.calibrate_scale("largemap_1km_px"), text_size=self.font_small)
                 else:
-                    btn2 = RoundedButton(self.calib_tab, 128, 26, 19, f"校准{name2}",
+                    btn2 = RoundedButton(self.calib_tab, 126, 26, 19, f"校准{name2}",
                                         command=lambda k=key2: self.region_manager.calibrate_region(k), text_size=self.font_small)
                 btn2.grid(row=row, column=1, padx=2, pady=2, sticky="ew")
             row += 1
@@ -703,15 +811,15 @@ class TacticalHub:
                 record_btn = RoundedButton(func_frame, 50, 26, 19, "录制", 
                                         command=lambda a=action, lbl=key_label: self.capture_hotkey(a, lbl), 
                                         is_toggle=False, text_size=self.font_small)
-                record_btn.pack(side="right", padx=0)
+                record_btn.pack(side="right", padx=4)
 
         # 保存快捷键按钮
         btn_frame = tk.Frame(self.key_frame, bg="#DDE6F0")
-        btn_frame.pack(side=tk.BOTTOM, pady=(2, 0))
-        save_btn = RoundedButton(btn_frame, 128, 28, 20, "保存快捷键", 
+        btn_frame.pack(side=tk.BOTTOM, pady=(2, 2))
+        save_btn = RoundedButton(btn_frame, 126, 28, 20, "保存快捷键", 
                                 command=self.save_hotkey_config, is_toggle=False, text_size=self.font_small)
         save_btn.pack(side=tk.LEFT, padx=2)
-        default_btn = RoundedButton(btn_frame, 128, 28, 20, "恢复默认", 
+        default_btn = RoundedButton(btn_frame, 126, 28, 20, "恢复默认", 
                                     command=self.reset_default_hotkeys, is_toggle=False, text_size=self.font_small)
         default_btn.pack(side=tk.LEFT, padx=2)
     
@@ -728,7 +836,7 @@ class TacticalHub:
         def on_close():
             if app in self.auto_calibrator_windows:
                 self.auto_calibrator_windows.remove(app)
-            app.root.destroy()
+            app.on_closing()
 
         app.root.protocol("WM_DELETE_WINDOW", on_close)
 
@@ -928,8 +1036,8 @@ class TacticalHub:
 
         elements = []
         alpha = int(255 * self.status_text_opacity)
-        base_x = 15
-        top_y = self.sh - 270
+        base_x = 35
+        top_y = self.sh - 300
         marker_y = 5
         status_y = 33
         detail_y = 58
@@ -943,12 +1051,12 @@ class TacticalHub:
             marker_icon = self._get_colored_marker_icon(self.current_marker_color)
             if marker_icon:
                 elements.append({
-                    "type": "image", "x": 120, "y": top_y + marker_y + 8,
+                    "type": "image", "x": base_x + 105, "y": top_y + marker_y + 8,
                     "image": marker_icon, "alpha": alpha, "anchor": "mm"
                 })
             else:
                 elements.append({
-                    "type": "text", "x": 120, "y": top_y + marker_y,
+                    "type": "text", "x": base_x + 105, "y": top_y + marker_y,
                     "text": self.current_marker_color, "fill": marker_color,
                     "alpha": alpha, "font_size": abs(self.font_status), "anchor": "lt"
                 })
@@ -1004,7 +1112,7 @@ class TacticalHub:
         # 应用特殊武器名称映射
         if curr in self.special_weapon_map:
             curr = self.special_weapon_map[curr]
-        pose = gesture_map.get(self.current_gesture, "未知姿势") if self.current_gesture else "未知姿势"
+        pose = gesture_map.get(self.current_gesture, "未知") if self.current_gesture else "未知"
         line4 = f"当前: {curr} | 姿势: {pose}"
 
         y_offset = top_y + detail_y

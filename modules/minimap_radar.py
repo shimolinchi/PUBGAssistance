@@ -72,6 +72,12 @@ class MinimapRadarModule:
             })
         return color_configs
 
+    def set_pnt_colors(self, colors):
+        self.colors = colors
+        self.color_configs = self._prepare_color_configs()
+        for color_name in colors.keys():
+            self.measured_distance.setdefault(color_name, 0.0)
+
     def _init_overlay(self):
         self.overlay = tk.Toplevel(self.root)
         self.overlay.attributes("-fullscreen", True)

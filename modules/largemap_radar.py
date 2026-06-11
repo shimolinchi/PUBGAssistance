@@ -67,11 +67,22 @@ class AutoMapDistanceAssistant:
                 with open(self.config_file, 'r', encoding='utf-8') as f:
                     config = json.load(f)
                     self.colors = config.get("pnt_colors", self.colors)
-                    for color_name, hex_color in self.base_colors.items():
-                        if color_name in self.colors:
-                            self.colors[color_name]["hex"] = hex_color
+                    self.base_colors = {name: data.get("hex", "#FFFFFF") for name, data in self.colors.items()}
             except:
                 pass
+
+    def set_pnt_colors(self, colors):
+        self.colors = colors
+        self.base_colors = {name: data.get("hex", "#FFFFFF") for name, data in colors.items()}
+        for color_name in self.color_order:
+            self.last_measured_dists.setdefault(color_name, None)
+        if self.show_display:
+            if self.state == "WAIT_PLAYER":
+                self._update_wait_ui()
+            elif self.state == "CALCULATING":
+                self._update_calc_ui()
+            else:
+                self._render_auto_hud()
 
     def _load_pnt_templates(self, preferred_dir):
         for tpl_dir in [preferred_dir, "templates/pnt"]:

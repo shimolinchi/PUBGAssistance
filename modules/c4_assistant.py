@@ -28,6 +28,7 @@ class C4Assistant:
 
         self.color_priority = ["Yellow", "Orange", "Blue", "Green"]
         self.selected_color = "Yellow"
+        self.color_hex_map = {"Yellow": "#E9E511", "Orange": "#DA6226", "Blue": "#017BC2", "Green": "#0F9D16"}
         self.distance = 0.0
 
         self.is_enabled = False
@@ -59,13 +60,8 @@ class C4Assistant:
     def _get_colored_icon(self, color_name):
         if not PIL_AVAILABLE or self.color_icon_img is None:
             return None
-        color_map = {
-            "Yellow": (0, 215, 255),
-            "Orange": (13, 82, 179),
-            "Blue": (163, 61, 26),
-            "Green": (102, 150, 0)
-        }
-        bgr = color_map.get(color_name, (255, 255, 255))
+        hex_color = self.color_hex_map.get(color_name, "#FFFFFF").lstrip("#")
+        bgr = (int(hex_color[4:6], 16), int(hex_color[2:4], 16), int(hex_color[0:2], 16))
         bgr_img = self.color_icon_img[:, :, :3]
         alpha = self.color_icon_img[:, :, 3]
         color_layer = np.full_like(bgr_img, bgr, dtype=np.uint8)
@@ -75,6 +71,9 @@ class C4Assistant:
         result[:, :, 3] = alpha
         pil_img = Image.fromarray(result)
         return ImageTk.PhotoImage(pil_img)
+
+    def set_pnt_colors(self, colors):
+        self.color_hex_map = {name: data.get("hex", "#FFFFFF") for name, data in colors.items()}
 
     def _init_overlay(self):
         self.overlay = tk.Toplevel(self.root)
@@ -205,8 +204,7 @@ class C4Assistant:
         cy = self.sh // 2 + 280
         icon_y = cy + 40
 
-        color_hex = {"Yellow": "#E9E511", "Orange": "#DA6226", "Blue": "#017BC2", "Green": "#0F9D16"}
-        hex_code = color_hex.get(self.selected_color, "#FFFFFF")
+        hex_code = self.color_hex_map.get(self.selected_color, "#FFFFFF")
 
         # 文字与标点同色
         self.canvas.create_text(cx, icon_y, text="当前使用标点：", fill=hex_code,

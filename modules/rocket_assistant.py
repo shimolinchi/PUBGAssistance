@@ -71,6 +71,9 @@ class RocketAssistant:
         self.alpha_hud = TransparentHudWindow() if TransparentHudWindow else None
         self._init_overlay()
 
+    def set_pnt_colors(self, colors):
+        self.color_map = {name: data.get("hex", "#FFFFFF") for name, data in colors.items()}
+
     def _init_overlay(self):
         self.overlay = tk.Toplevel(self.root)
         self.overlay.attributes("-fullscreen", True)

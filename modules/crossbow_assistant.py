@@ -36,6 +36,7 @@ class CrossbowAssistant:
         self._thread_running = False
         self.hud_thread = None
         self.alpha_hud = TransparentHudWindow() if TransparentHudWindow else None
+        self.color_hex_map = {"Yellow": "#E9E511", "Orange": "#DA6226", "Blue": "#017BC2", "Green": "#0F9D16"}
 
         # 加载弩的弹道标定数据
         self.calib_dists = []
@@ -51,6 +52,9 @@ class CrossbowAssistant:
                 pass
 
         self._init_overlay()
+
+    def set_pnt_colors(self, colors):
+        self.color_hex_map = {name: data.get("hex", "#FFFFFF") for name, data in colors.items()}
 
     def _init_overlay(self):
         self.overlay = tk.Toplevel(self.root)
@@ -183,10 +187,6 @@ class CrossbowAssistant:
                                     font=("Consolas", 14, "bold"), anchor="w", tags="crossbow_hud")
 
     def _hud_loop(self):
-        color_hex_map = {
-            "Yellow": "#E9E511", "Orange": "#DA6226",
-            "Blue": "#017BC2", "Green": "#0F9D16"
-        }
         while self._thread_running:
             mini_dists = self.minimap.get_measured_distance()
             valid_targets = []
@@ -194,7 +194,7 @@ class CrossbowAssistant:
                 if dist > 0.0:
                     valid_targets.append({
                         "dist": dist,
-                        "color": color_hex_map[color]
+                        "color": self.color_hex_map.get(color, "#FFFFFF")
                     })
             self.root.after(0, self._draw_hud, valid_targets)
             time.sleep(1.0 / self.fps)

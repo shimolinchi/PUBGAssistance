@@ -5,6 +5,7 @@
         "width": 457,
         "height": 457
     },
+    "pnt_color_mode": "protanopia",
     "pnt_colors": {
         "Yellow": {
             "lower": [
@@ -17,7 +18,7 @@
                 255,
                 255
             ],
-            "hex": "#E3D43C"
+            "hex": "#B9AE15"
         },
         "Orange": {
             "lower": [
@@ -43,7 +44,7 @@
                 255,
                 255
             ],
-            "hex": "#1A3EA3"
+            "hex": "#1A3FA4"
         },
         "Green": {
             "lower": [
@@ -57,6 +58,224 @@
                 255
             ],
             "hex": "#109166"
+        }
+    },
+    "pnt_color_modes": {
+        "normal": {
+            "Yellow": {
+                "lower": [
+                    28,
+                    150,
+                    160
+                ],
+                "upper": [
+                    32,
+                    255,
+                    255
+                ],
+                "hex": "#ABA809"
+            },
+            "Orange": {
+                "lower": [
+                    8,
+                    160,
+                    160
+                ],
+                "upper": [
+                    12,
+                    255,
+                    255
+                ],
+                "hex": "#A04619"
+            },
+            "Blue": {
+                "lower": [
+                    99,
+                    120,
+                    160
+                ],
+                "upper": [
+                    103,
+                    255,
+                    255
+                ],
+                "hex": "#28749F"
+            },
+            "Green": {
+                "lower": [
+                    60,
+                    150,
+                    120
+                ],
+                "upper": [
+                    64,
+                    255,
+                    255
+                ],
+                "hex": "#2F8433"
+            }
+        },
+        "deuteranopia": {
+            "Yellow": {
+                "lower": [
+                    26,
+                    150,
+                    160
+                ],
+                "upper": [
+                    30,
+                    255,
+                    255
+                ],
+                "hex": "#B9AE15"
+            },
+            "Orange": {
+                "lower": [
+                    11,
+                    160,
+                    160
+                ],
+                "upper": [
+                    15,
+                    255,
+                    255
+                ],
+                "hex": "#A15519"
+            },
+            "Blue": {
+                "lower": [
+                    107,
+                    120,
+                    160
+                ],
+                "upper": [
+                    111,
+                    255,
+                    255
+                ],
+                "hex": "#0046BC"
+            },
+            "Green": {
+                "lower": [
+                    78,
+                    150,
+                    120
+                ],
+                "upper": [
+                    82,
+                    255,
+                    255
+                ],
+                "hex": "#01B377"
+            }
+        },
+        "protanopia": {
+            "Yellow": {
+                "lower": [
+                    26,
+                    150,
+                    160
+                ],
+                "upper": [
+                    30,
+                    255,
+                    255
+                ],
+                "hex": "#B9AE15"
+            },
+            "Orange": {
+                "lower": [
+                    10,
+                    160,
+                    160
+                ],
+                "upper": [
+                    14,
+                    255,
+                    255
+                ],
+                "hex": "#B3500D"
+            },
+            "Blue": {
+                "lower": [
+                    110,
+                    120,
+                    160
+                ],
+                "upper": [
+                    114,
+                    255,
+                    255
+                ],
+                "hex": "#1A3FA4"
+            },
+            "Green": {
+                "lower": [
+                    78,
+                    150,
+                    120
+                ],
+                "upper": [
+                    82,
+                    255,
+                    255
+                ],
+                "hex": "#109166"
+            }
+        },
+        "tritanopia": {
+            "Yellow": {
+                "lower": [
+                    26,
+                    150,
+                    160
+                ],
+                "upper": [
+                    30,
+                    255,
+                    255
+                ],
+                "hex": "#E3D43C"
+            },
+            "Orange": {
+                "lower": [
+                    3,
+                    160,
+                    160
+                ],
+                "upper": [
+                    7,
+                    255,
+                    255
+                ],
+                "hex": "#B14732"
+            },
+            "Blue": {
+                "lower": [
+                    105,
+                    120,
+                    160
+                ],
+                "upper": [
+                    109,
+                    255,
+                    255
+                ],
+                "hex": "#2E5689"
+            },
+            "Green": {
+                "lower": [
+                    87,
+                    150,
+                    120
+                ],
+                "upper": [
+                    91,
+                    255,
+                    255
+                ],
+                "hex": "#009995"
+            }
         }
     },
     "map_rect": {
@@ -2659,22 +2878,28 @@
             "height": 457
         },
         "largemap_region": {
-            "left": 408,
+            "left": 421,
             "top": 0,
             "width": 1079,
             "height": 1079
         },
         "elevation_region": {
-            "left": 944,
-            "top": 78,
-            "width": 100,
-            "height": 880
+            "left": 923,
+            "top": 70,
+            "width": 65,
+            "height": 910
         },
         "crosshair_region": {
             "left": 600,
             "top": 180,
             "width": 720,
             "height": 720
+        },
+        "stance_region": {
+            "left": 696,
+            "top": 968,
+            "width": 51,
+            "height": 64
         }
     },
     "real_scales": {},
@@ -2690,6 +2915,10 @@
         "weapon2_name_region": {
             "width": 195,
             "height": 37
+        },
+        "stance_region": {
+            "width": 53,
+            "height": 67
         }
     }
 }

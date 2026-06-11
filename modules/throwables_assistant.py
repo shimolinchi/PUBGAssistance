@@ -60,6 +60,7 @@ class ThrowablesAssistant:
         # 标点颜色切换
         self.color_priority = ["Yellow", "Orange", "Blue", "Green"]
         self.selected_color = "Yellow"
+        self.color_hex_map = {"Yellow": "#E9E511", "Orange": "#DA6226", "Blue": "#017BC2", "Green": "#0F9D16"}
 
         # 加载图标模板
         self.color_icon_img = None
@@ -104,13 +105,8 @@ class ThrowablesAssistant:
     def _get_colored_icon(self, color_name):
         if not PIL_AVAILABLE or self.color_icon_img is None:
             return None
-        color_map = {
-            "Yellow": (0, 215, 255),
-            "Orange": (13, 82, 179),
-            "Blue": (163, 61, 26),
-            "Green": (102, 150, 0)
-        }
-        bgr = color_map.get(color_name, (255, 255, 255))
+        hex_color = self.color_hex_map.get(color_name, "#FFFFFF").lstrip("#")
+        bgr = (int(hex_color[4:6], 16), int(hex_color[2:4], 16), int(hex_color[0:2], 16))
         bgr_img = self.color_icon_img[:, :, :3]
         alpha = self.color_icon_img[:, :, 3]
         color_layer = np.full_like(bgr_img, bgr, dtype=np.uint8)
@@ -120,6 +116,9 @@ class ThrowablesAssistant:
         result[:, :, 3] = alpha
         pil_img = Image.fromarray(result)
         return ImageTk.PhotoImage(pil_img)
+
+    def set_pnt_colors(self, colors):
+        self.color_hex_map = {name: data.get("hex", "#FFFFFF") for name, data in colors.items()}
 
     def _init_overlay(self):
         self.overlay = tk.Toplevel(self.root)
@@ -199,8 +198,7 @@ class ThrowablesAssistant:
         self.canvas.delete("color_tip")
         cx = self.sw // 2
         cy = self.sh // 2 + 100
-        color_hex = {"Yellow": "#E9E511", "Orange": "#DA6226", "Blue": "#017BC2", "Green": "#0F9D16"}
-        hex_code = color_hex.get(self.selected_color, "#FFFFFF")
+        hex_code = self.color_hex_map.get(self.selected_color, "#FFFFFF")
         self.canvas.create_text(cx, cy, text=f"切换到 {self.selected_color}", fill=hex_code,
                                 font=("Microsoft YaHei", 14, "bold"), tags="color_tip")
         self.root.after(1500, lambda: self.canvas.delete("color_tip"))
@@ -212,8 +210,7 @@ class ThrowablesAssistant:
         # 位置：屏幕宽度 1/4 处，距离底部 80 像素
         x = self.sw // 4
         y = self.sh - 80
-        color_hex = {"Yellow": "#E9E511", "Orange": "#DA6226", "Blue": "#017BC2", "Green": "#0F9D16"}
-        hex_code = color_hex.get(self.selected_color, "#FFFFFF")
+        hex_code = self.color_hex_map.get(self.selected_color, "#FFFFFF")
 
         self.canvas.delete("color_indicator")
         # 文字
@@ -268,10 +265,6 @@ class ThrowablesAssistant:
 
     # ================= 核心渲染循环 =================
     def _hud_loop(self):
-        color_hex_map = {
-            "Yellow": "#E9E511", "Orange": "#DA6226",
-            "Blue": "#017BC2", "Green": "#0F9D16"
-        }
         while self._thread_running:
             mini_dists = self.minimap.get_measured_distance()
             valid_targets = []
@@ -279,10 +272,10 @@ class ThrowablesAssistant:
                 if dist > 0.0:
                     valid_targets.append({
                         "dist": dist,
-                        "color": color_hex_map[color_name],
+                        "color": self.color_hex_map.get(color_name, "#FFFFFF"),
                         "color_name": color_name
                     })
-            self.root.after(0, self._draw_hud, valid_targets, color_hex_map)
+            self.root.after(0, self._draw_hud, valid_targets, self.color_hex_map)
             time.sleep(0.03)
 
     def _draw_hud(self, valid_targets, color_hex_map):
