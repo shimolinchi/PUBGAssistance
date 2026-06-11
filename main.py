@@ -8,6 +8,19 @@ import ctypes
 import json
 import os
 
+try:
+    import cv2
+    import numpy as np
+    from PIL import Image
+    PIL_AVAILABLE = True
+except ImportError:
+    PIL_AVAILABLE = False
+
+try:
+    from modules.transparent_hud import TransparentHudWindow
+except ImportError:
+    TransparentHudWindow = None
+
 from modules.region_manager import RegionManager
 from modules.minimap_radar import MinimapRadarModule
 from modules.elevation_radar import ElevationRadarModule
@@ -102,11 +115,21 @@ class TacticalHub:
 
         # 主窗口和按钮使用固定像素尺寸，字体也使用固定像素字号，避免不同分辨率下文字与按钮比例不一致。
         self.font_status = -13
-        self.font_small = -16
-        self.font_large = -18
+        self.font_small = -14
+        self.font_large = -16
+
+        # 特殊武器名称映射（英文 -> 中文）
+        self.special_weapon_map = {
+            "Rocket": "火箭筒",
+            "Grenade": "投掷物",
+            "VSS": "VSS",
+            "Crossbow": "十字弩",
+            "C4": "C4",
+            "Mortar": "迫击炮"
+        }
 
         # 基础模块
-        self.minimap = MinimapRadarModule(self.root, self.region_manager, config_file=self.config_file)
+        self.minimap = MinimapRadarModule(self.root, self.region_manager, config_file=self.config_file, fps = 60)
         self.elevation = ElevationRadarModule(self.root, self.region_manager, fps=30, config_file=self.config_file)
         self.map_assist = MapPointAssistant(self.root, self.region_manager, config_file=self.config_file)
         self.largemap_radar = AutoMapDistanceAssistant(self.root, self.region_manager, config_file=self.config_file)
@@ -134,6 +157,41 @@ class TacticalHub:
             target_speed=50.0,
             jump_distance_threshold=20.0   # 推荐跳车距离（米）
         )
+        self.special_assistant_modules = {
+            "mortar": self.mortar,
+            "rocket": self.rocket,
+            "throwables": self.throwables,
+            "vss": self.vss_assist,
+            "crossbow": self.crossbow_assist,
+            "c4": self.c4_assistant
+        }
+        self.weapon_assistant_map = {
+            "Rocket": "rocket",
+            "Grenade": "throwables",
+            "VSS": "vss",
+            "Crossbow": "crossbow",
+            "C4": "c4"
+        }
+        self.manual_assistant_keys = set()
+        self.marker_color_order = ["Yellow", "Orange", "Blue", "Green"]
+        self.current_marker_color = "Yellow"
+        self.marker_color_hex = {
+            "Yellow": "#E9E511",
+            "Orange": "#DA6226",
+            "Blue": "#017BC2",
+            "Green": "#0F9D16"
+        }
+        self.status_text_opacity = 0.7
+        self.marker_color_bgr = {
+            "Yellow": (17, 229, 233),
+            "Orange": (38, 98, 218),
+            "Blue": (194, 123, 1),
+            "Green": (22, 157, 15)
+        }
+        self.marker_icon_img = None
+        self.current_marker_icon = None
+        self._load_marker_icon()
+        self._sync_marker_color_to_assistants()
 
         # 状态变量
         self.weapon_detection_enabled = True
@@ -223,13 +281,14 @@ class TacticalHub:
         # 快捷键配置
         self.hotkeys = {
             "throw": "v",
-            "toggle_display": "<ctrl>+<shift>+<space>",
-            "measure_map": "<f1>",
-            "toggle_recoil": "<ctrl>+<shift>+<tab>",
-            "toggle_weapon_detection": "<f2>",
+            "toggle_weapon_detection": "<f1>",
+            "toggle_display": "<f2>",
+            "toggle_recoil": "<f3>",
+            "measure_map": "<f4>",
             "toggle_equipment": "tab"
         }
         self.load_hotkey_config()
+        self.migrate_legacy_default_hotkeys()
 
         self.init_ui()
         self.start_listeners()
@@ -251,6 +310,48 @@ class TacticalHub:
             self.root.iconbitmap(icon_path)
         except Exception as e:
             print(f"警告: 无法加载图标 - {e}")
+
+    def _load_marker_icon(self):
+        if not PIL_AVAILABLE:
+            return
+        icon_path = os.path.join(os.path.abspath(os.path.dirname(__file__)), "templates", "pnt", "0.png")
+        if os.path.exists(icon_path):
+            img = cv2.imread(icon_path, cv2.IMREAD_UNCHANGED)
+            if img is not None and len(img.shape) == 3 and img.shape[2] == 4:
+                self.marker_icon_img = img
+
+    def _get_colored_marker_icon(self, color_name):
+        if not PIL_AVAILABLE or self.marker_icon_img is None:
+            return None
+        bgr = self.marker_color_bgr.get(color_name, (255, 255, 255))
+        bgr_img = self.marker_icon_img[:, :, :3]
+        alpha = self.marker_icon_img[:, :, 3]
+        color_layer = np.full_like(bgr_img, bgr, dtype=np.uint8)
+        alpha_norm = alpha / 255.0
+        result = (color_layer * alpha_norm[..., np.newaxis] + bgr_img * (1 - alpha_norm[..., np.newaxis])).astype(np.uint8)
+        result = cv2.cvtColor(result, cv2.COLOR_BGR2RGBA)
+        result[:, :, 3] = alpha
+        return Image.fromarray(result)
+
+    def _sync_marker_color_to_assistants(self):
+        for assistant in [getattr(self, "mortar", None), getattr(self, "throwables", None), getattr(self, "c4_assistant", None)]:
+            if assistant and hasattr(assistant, "selected_color"):
+                assistant.selected_color = self.current_marker_color
+
+    def _should_show_marker_indicator(self):
+        if not self.display_enabled:
+            return False
+        return any(
+            key in self.manual_assistant_keys or self.special_assistant_modules.get(key, None).is_enabled
+            for key in ["mortar", "throwables", "c4"]
+            if self.special_assistant_modules.get(key, None)
+        )
+
+    def cycle_marker_color(self, direction):
+        idx = self.marker_color_order.index(self.current_marker_color)
+        self.current_marker_color = self.marker_color_order[(idx + direction) % len(self.marker_color_order)]
+        self._sync_marker_color_to_assistants()
+        self.update_status_display()
 
     def on_equipment_status(self, status):
         self.equipment_status = status
@@ -288,20 +389,14 @@ class TacticalHub:
         self.status_bar.pack(side=tk.BOTTOM, fill=tk.X)
 
     def _init_status_overlay(self):
-        self.status_overlay = tk.Toplevel(self.root)
-        self.status_overlay.attributes("-topmost", True)
-        self.status_overlay.attributes("-transparentcolor", "black")
-        self.status_overlay.overrideredirect(True)
-        x = 5
-        y = self.sh - 240   # 底部对齐
-        self.status_overlay.geometry(f"450x120+{x}+{y}")
-        self.status_canvas = tk.Canvas(self.status_overlay, bg="black", highlightthickness=0, width=450, height=120)
-        self.status_canvas.pack()
-        try:
-            hwnd = int(self.status_overlay.frame(), 16)
-            ctypes.windll.user32.SetWindowDisplayAffinity(hwnd, 17)
-        except Exception as e:
-            print(f"[状态栏] 防截图 API 调用失败: {e}")
+        if TransparentHudWindow:
+            self.status_overlay = TransparentHudWindow()
+        else:
+            self.status_overlay = None
+            print("[状态栏] 透明 HUD 不可用，左下角状态覆盖层已禁用")
+
+        # 立即显示状态覆盖层中的四行文字
+        self.update_status_display()
 
     def set_status(self, status_text, status_type="info"):
         """设置状态栏文本和背景色
@@ -358,7 +453,7 @@ class TacticalHub:
         self.size_buttons = []
         sizes = [("小", "small"), ("中", "medium"), ("大", "large")]
         for i, (name, val) in enumerate(sizes):
-            btn = RoundedButton(size_frame, 66, 35, 25, name,
+            btn = RoundedButton(size_frame, 66, 34, 25, name,
                                 command=lambda idx=i: self.select_size(idx), is_toggle=True, text_size=self.font_small)
             btn.grid(row=0, column=i, padx=4)
             self.size_buttons.append(btn)
@@ -405,9 +500,10 @@ class TacticalHub:
             ("小地图", "minimap_region"),
             ("大地图", "largemap_region"),
             ("垂直测高", "elevation_region"),
-            ("准星区域", "crosshair_region"),
+            # ("准星区域", "crosshair_region"),
             ("武器栏", "weapon_region"),
-            ("1km长度", "largemap_1km_px")   
+            ("1km长度", "largemap_1km_px"),
+            ("姿势区域", "stance_region")   
         ]
 
         row = 1
@@ -518,18 +614,25 @@ class TacticalHub:
         self.recoil.reload_config()
 
     def toggle_assistant(self, key):
-        # 仅当显示层开启且当前武器匹配时才允许手动切换
-        weapon_map = {"rocket": "Rocket", "throwables": "Grenade", "vss": "VSS", "crossbow": "Crossbow", "c4": "C4"}
-        if key == "mortar":
-            # 迫击炮独立控制，不依赖武器
-            self.mortar.enable_module(not self.mortar.is_enabled)
-            self.assistant_btns["mortar"].set_active(self.mortar.is_enabled)
+        module = self.special_assistant_modules.get(key)
+        if not module:
+            return
+        if not self.display_enabled:
+            module.enable_module(False)
+            self.manual_assistant_keys.discard(key)
+            if key in self.assistant_btns:
+                self.assistant_btns[key].set_active(False)
+            return
+
+        next_state = not module.is_enabled
+        module.enable_module(next_state)
+        if next_state:
+            self.manual_assistant_keys.add(key)
         else:
-            required_weapon = weapon_map.get(key)
-            if self.display_enabled and self.current_weapon == required_weapon:
-                module = getattr(self, key)
-                module.enable_module(not module.is_enabled)
-                self.assistant_btns[key].set_active(module.is_enabled)
+            self.manual_assistant_keys.discard(key)
+        if key in self.assistant_btns:
+            self.assistant_btns[key].set_active(module.is_enabled)
+        self.update_status_display()
 
     def format_hotkey(self, combo):
         """将组合键字符串转换为便于显示的格式（去除尖括号，大写）"""
@@ -616,6 +719,27 @@ class TacticalHub:
                         self.hotkeys.update(data["hotkeys"])
             except: pass
 
+    def migrate_legacy_default_hotkeys(self):
+        legacy_defaults = {
+            "toggle_weapon_detection": {"<f2>"},
+            "toggle_display": {"<ctrl>+<shift>+<space>"},
+            "toggle_recoil": {"<ctrl>+<shift>+<tab>"},
+            "measure_map": {"<f1>", "<ctrl>+<shift>+m"}
+        }
+        new_defaults = {
+            "toggle_weapon_detection": "<f1>",
+            "toggle_display": "<f2>",
+            "toggle_recoil": "<f3>",
+            "measure_map": "<f4>"
+        }
+        changed = False
+        for action, old_values in legacy_defaults.items():
+            if self.hotkeys.get(action) in old_values:
+                self.hotkeys[action] = new_defaults[action]
+                changed = True
+        if changed:
+            self.save_hotkey_config()
+
     def save_hotkey_config(self):
         data = {}
         if os.path.exists(self.config_file):
@@ -668,50 +792,78 @@ class TacticalHub:
             "smg_compensator": "冲锋补偿", "smg_suppressor": "冲锋消焰", "smg_silencer": "冲锋消音",
         }
         gesture_map = {"stand": "站立", "squat": "蹲下", "lie": "趴下"}
-        status_map = {
-            "opened": ("武器识别中", "#2ECC71"),    # 绿
-            "closed": ("装备栏关闭", "#3498DB"),      # 蓝
-            "confirming": ("正在确认中", "#F39C12")     # 橙黄
+        status_colors = {
+            "green": self.marker_color_hex["Green"],
+            "orange": self.marker_color_hex["Orange"],
+            "blue": self.marker_color_hex["Blue"],
+            "yellow": self.marker_color_hex["Yellow"],
+            "red": "#E74C3C",
+            "white": "#FFFFFF"
         }
-        status_text, status_color = status_map.get(self.equipment_status, ("装备栏关闭", "#3498DB"))
+        status_map = {
+            "opened": ("武器识别中", status_colors["green"]),
+            "closed": ("装备栏关闭", status_colors["blue"]),
+            "confirming": ("正在确认中", status_colors["orange"])
+        }
+        status_text, status_color = status_map.get(self.equipment_status, ("装备栏关闭", status_colors["blue"]))
 
-        # 清空画布
-        self.status_canvas.delete("status_text")
+        elements = []
+        alpha = int(255 * self.status_text_opacity)
+        base_x = 15
+        top_y = self.sh - 270
+        marker_y = 5
+        status_y = 33
+        detail_y = 58
+        if self._should_show_marker_indicator():
+            marker_color = self.marker_color_hex.get(self.current_marker_color, "#FFFFFF")
+            elements.append({
+                "type": "text", "x": base_x, "y": top_y + marker_y,
+                "text": "当前使用标点：", "fill": marker_color,
+                "alpha": alpha, "font_size": abs(self.font_status), "anchor": "lt"
+            })
+            marker_icon = self._get_colored_marker_icon(self.current_marker_color)
+            if marker_icon:
+                elements.append({
+                    "type": "image", "x": 120, "y": top_y + marker_y + 8,
+                    "image": marker_icon, "alpha": alpha, "anchor": "mm"
+                })
+            else:
+                elements.append({
+                    "type": "text", "x": 120, "y": top_y + marker_y,
+                    "text": self.current_marker_color, "fill": marker_color,
+                    "alpha": alpha, "font_size": abs(self.font_status), "anchor": "lt"
+                })
 
-        x_start = 10
-        y_offset = 5
+        x_start = base_x
+        y_offset = top_y + status_y
         # 识别
-        color_detect = "#2ECC71" if self.weapon_detection_enabled else "#E74C3C"
-        self.status_canvas.create_text(x_start, y_offset, anchor="nw", text="识别", fill=color_detect,
-                                    font=("Microsoft YaHei", self.font_status, "bold"), tags="status_text")
+        color_detect = status_colors["green"] if self.weapon_detection_enabled else status_colors["red"]
+        elements.append({"type": "text", "x": x_start, "y": y_offset, "text": "识别", "fill": color_detect, "alpha": alpha, "font_size": abs(self.font_status), "anchor": "lt"})
         
         x_start += 35
         # 测距
-        color_display = "#2ECC71" if self.display_enabled else "#E74C3C"
-        self.status_canvas.create_text(x_start, y_offset, anchor="nw", text="测距", fill=color_display,
-                                    font=("Microsoft YaHei", self.font_status, "bold"), tags="status_text")
+        color_display = status_colors["green"] if self.display_enabled else status_colors["red"]
+        elements.append({"type": "text", "x": x_start, "y": y_offset, "text": "测距", "fill": color_display, "alpha": alpha, "font_size": abs(self.font_status), "anchor": "lt"})
         x_start += 35
         # 压枪
         if self.recoil_enabled:
-            if self.current_weapon is None:
-                color_recoil = "#F39C12"   # 黄色：没有武器但压枪开启
-            else:
-                color_recoil = "#2ECC71"   # 绿色：有武器且压枪开启
+            color_recoil = status_colors["green"]   # 绿色：压枪开启
         else:
-            color_recoil = "#E74C3C"       # 红色：压枪关闭
-        self.status_canvas.create_text(x_start, y_offset, anchor="nw", text="压枪", fill=color_recoil,
-                                    font=("Microsoft YaHei", self.font_status, "bold"), tags="status_text")
+            color_recoil = status_colors["red"]       # 红色：压枪关闭
+        elements.append({"type": "text", "x": x_start, "y": y_offset, "text": "压枪", "fill": color_recoil, "alpha": alpha, "font_size": abs(self.font_status), "anchor": "lt"})
         
         x_start += 35
         # 装备栏状态
-        self.status_canvas.create_text(x_start, y_offset, anchor="nw", text=status_text, fill=status_color,
-                                    font=("Microsoft YaHei", self.font_status, "bold"), tags="status_text")
+        elements.append({"type": "text", "x": x_start, "y": y_offset, "text": status_text, "fill": status_color, "alpha": alpha, "font_size": abs(self.font_status), "anchor": "lt"})
 
         w1 = self.current_weapons_attachments.get(1, {})
         w2 = self.current_weapons_attachments.get(2, {})
 
         def format_weapon(weapon_data):
             name = weapon_data.get("name") or "无"
+            # 应用特殊武器名称映射
+            if name in self.special_weapon_map:
+                name = self.special_weapon_map[name]
             parts = [name]
             scope = weapon_data.get("scope")
             if scope:
@@ -730,20 +882,27 @@ class TacticalHub:
         line2 = f"武器1: {format_weapon(w1)}"
         line3 = f"武器2: {format_weapon(w2)}"
         curr = self.current_weapon if self.current_weapon else "无"
+        # 应用特殊武器名称映射
+        if curr in self.special_weapon_map:
+            curr = self.special_weapon_map[curr]
         pose = gesture_map.get(self.current_gesture, "未知姿势") if self.current_gesture else "未知姿势"
         line4 = f"当前: {curr} | 姿势: {pose}"
 
-        y_offset += 25 
+        y_offset = top_y + detail_y
+        detail_color = status_colors["white"]
         for line in [line2, line3, line4]:
-            self.status_canvas.create_text(10, y_offset, anchor="nw", text=line, fill="white",
-                                        font=("Microsoft YaHei", self.font_status, "bold"), tags="status_text")
+            elements.append({"type": "text", "x": base_x, "y": y_offset, "text": line, "fill": detail_color, "alpha": alpha, "font_size": abs(self.font_status), "anchor": "lt"})
             y_offset += 25
-        self.status_overlay.deiconify()
+        self.status_overlay.render_elements(elements)
 
     def update_status_full(self):
         parts = []
         if self.current_weapon:
-            parts.append(self.current_weapon)
+            # 应用特殊武器名称映射
+            weapon_name = self.current_weapon
+            if weapon_name in self.special_weapon_map:
+                weapon_name = self.special_weapon_map[weapon_name]
+            parts.append(weapon_name)
         if self.current_gesture:
             gesture_map = {"stand": "站立", "squat": "蹲下", "lie": "趴下"}
             gesture_display = gesture_map.get(self.current_gesture, self.current_gesture)
@@ -755,36 +914,30 @@ class TacticalHub:
             self.set_status(status_text, "info")
 
     def update_weapon_ui(self, weapon_name):
-        special = {
-            "Rocket": self.rocket,
-            "Grenade": self.throwables,
-            "VSS": self.vss_assist,
-            "Crossbow": self.crossbow_assist,
-            "C4": self.c4_assistant
-        }
-        for name, mod in special.items():
-            if self.display_enabled and weapon_name == name:
-                mod.enable_module(True)
-            else:
-                mod.enable_module(False)
-        for btn_key, mod in [("rocket", self.rocket), ("throwables", self.throwables),
-                             ("vss", self.vss_assist), ("crossbow", self.crossbow_assist), ("c4", self.c4_assistant)]:
-            if btn_key in self.assistant_btns:
-                self.assistant_btns[btn_key].set_active(mod.is_enabled)
+        auto_key = self.weapon_assistant_map.get(weapon_name) if self.display_enabled else None
+        for key, module in self.special_assistant_modules.items():
+            if key == "mortar":
+                continue
+            should_enable = self.display_enabled and (key in self.manual_assistant_keys or key == auto_key)
+            module.enable_module(should_enable)
+            if key in self.assistant_btns:
+                self.assistant_btns[key].set_active(module.is_enabled)
 
     def toggle_display(self):
         self.display_enabled = not self.display_enabled
         self.btn_display.set_active(self.display_enabled)
         self.btn_display.set_text(f"{'关闭' if self.display_enabled else '开启'}瞄准辅助")
         self.mortar.enable_module(self.display_enabled)
+        if not self.display_enabled:
+            self.manual_assistant_keys.clear()
         self.assistant_btns["mortar"].set_active(self.display_enabled and self.mortar.is_enabled)
-        if self.current_weapon:
-            self.update_weapon_ui(self.current_weapon)
+        self.update_weapon_ui(self.current_weapon)
         self.minimap.set_enabled(self.display_enabled)
         self.elevation.set_enabled(self.display_enabled)
         self.minimap.set_display(self.display_enabled)
         self.elevation.set_display(self.display_enabled)
         self.largemap_radar.set_display(self.display_enabled)
+        self.update_status_display()
 
 
     def toggle_recoil(self):
@@ -809,6 +962,7 @@ class TacticalHub:
                 self.recoil.update_stance(self.current_gesture)
         else:
             self.recoil.update_current_weapon(None)
+        self.update_status_display()
 
     def toggle_debug(self):
         new_state = not self.region_manager.show_debug
@@ -822,13 +976,25 @@ class TacticalHub:
         self.mouse_listener = mouse.Listener(on_click=self.on_mouse_click)
         self.mouse_listener.start()
         hotkey_mapping = {
-            self.hotkeys['toggle_display']: self.toggle_display,
-            self.hotkeys['measure_map']: self.largemap_radar.toggle_mode,
-            self.hotkeys['toggle_recoil']: self.toggle_recoil,
-            self.hotkeys['toggle_weapon_detection']: self.toggle_weapon_detection,
+            self.hotkeys['toggle_display']: lambda: self.root.after(0, self.toggle_display),
+            self.hotkeys['measure_map']: lambda: self.root.after(0, self.largemap_radar.toggle_mode),
+            self.hotkeys['toggle_recoil']: lambda: self.root.after(0, self.toggle_recoil),
+            self.hotkeys['toggle_weapon_detection']: lambda: self.root.after(0, self.toggle_weapon_detection),
         }
         self.hotkey_listener = keyboard.GlobalHotKeys(hotkey_mapping)
         self.hotkey_listener.start()
+
+    def restart_listeners(self):
+        for listener_name in ["hotkey_listener", "keyboard_listener", "mouse_listener"]:
+            listener = getattr(self, listener_name, None)
+            if listener:
+                try:
+                    listener.stop()
+                except Exception:
+                    pass
+                setattr(self, listener_name, None)
+        self.save_hotkey_config()
+        self.start_listeners()
 
     def on_throw_hotkey(self):
         """手雷瞬爆热键的回调（检查条件）"""
@@ -836,9 +1002,6 @@ class TacticalHub:
             self.throwables.toggle_auto_throw()
 
     def on_key_press(self, key):
-        self.c4_assistant.on_key_press(key)
-        self.throwables.on_key_press(key)
-
         try:
             if key == keyboard.Key.home:
                 if self.root.state() == 'normal':
@@ -852,6 +1015,18 @@ class TacticalHub:
             pass
         if key in (keyboard.Key.alt_l, keyboard.Key.alt_r):
             self.alt_pressed = True
+
+        marker_char = None
+        if hasattr(key, 'char') and key.char:
+            marker_char = key.char.lower()
+        elif hasattr(key, 'vk') and key.vk is not None:
+            if key.vk == 81:
+                marker_char = 'q'
+            elif key.vk == 69:
+                marker_char = 'e'
+        if marker_char in ['q', 'e'] and self._should_show_marker_indicator():
+            self.cycle_marker_color(-1 if marker_char == 'q' else 1)
+            return
 
         equip_key = self.hotkeys['toggle_equipment']
         equip_parts = equip_key.split('+')
@@ -924,13 +1099,14 @@ class TacticalHub:
     def reset_default_hotkeys(self):
         self.hotkeys = {
             "throw": "v",
-            "toggle_display": "<ctrl>+<shift>+<space>",
-            "measure_map": "<ctrl>+<shift>+m",
-            "toggle_recoil": "<ctrl>+<shift>+<tab>",
-            "toggle_weapon_detection": "<f2>",
+            "toggle_weapon_detection": "<f1>",
+            "toggle_display": "<f2>",
+            "toggle_recoil": "<f3>",
+            "measure_map": "<f4>",
             "toggle_equipment": "tab"
         }
         self.save_hotkey_config()
+        self.restart_listeners()
         # 刷新UI中的快捷键显示
         for action, label in self.key_labels.items():
             label.config(text=self.format_hotkey(self.hotkeys[action]))
@@ -950,6 +1126,13 @@ class TacticalHub:
         self.weapon_detector.set_enabled(False)
         self.gesture_id.set_enabled(False)
         self.recoil.shutdown()
+        if hasattr(self.mortar, "shutdown"):
+            self.mortar.shutdown()
+        if hasattr(self.largemap_radar, "shutdown"):
+            self.largemap_radar.shutdown()
+        for assistant in [self.rocket, self.throwables, self.vss_assist, self.crossbow_assist]:
+            if hasattr(assistant, "shutdown"):
+                assistant.shutdown()
         self.c4_assistant.shutdown()   # 关闭 C4 助手
         if self.status_overlay:
             self.status_overlay.destroy()

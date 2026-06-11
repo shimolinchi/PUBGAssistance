@@ -29,6 +29,7 @@ class RegionManager:
         self.real_scales = {}
 
         self._load_config()
+        self._sync_crosshair_region()
 
         # 调试覆盖层
         self.debug_overlay = None
@@ -51,6 +52,21 @@ class RegionManager:
                             print(f"[全局管理] 加载 real_scales: {self.real_scales}")
             except Exception as e:
                 print(f"[全局管理] 配置文件加载失败: {e}")
+
+    def _sync_crosshair_region(self):
+        """根据当前真实分辨率自动生成准星区域并同步到配置文件。"""
+        side = int(round(self.real_h / 1.5))
+        side = max(1, min(side, self.real_w, self.real_h))
+        left = int(round((self.real_w - side) / 2))
+        top = int(round((self.real_h - side) / 2))
+        self.real_regions["crosshair_region"] = {
+            "left": left,
+            "top": top,
+            "width": side,
+            "height": side
+        }
+        self._save_config()
+        print(f"[全局管理] 自动同步 crosshair_region: {self.real_regions['crosshair_region']}")
 
     def _save_config(self):
         """保存当前实际分辨率下的区域和比例尺"""

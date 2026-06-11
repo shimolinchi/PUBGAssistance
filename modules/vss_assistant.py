@@ -8,6 +8,13 @@ import os
 import ctypes
 
 from modules.hair_tracker import HairTracker
+try:
+    from modules.transparent_hud import TransparentHudWindow
+except Exception:
+    try:
+        from transparent_hud import TransparentHudWindow
+    except Exception:
+        TransparentHudWindow = None
 
 class VssAssistant:
     """PUBG VSS 专属战术助手 (对外主类)"""
@@ -28,6 +35,7 @@ class VssAssistant:
         self.is_enabled = False
         self._thread_running = False
         self.hud_thread = None
+        self.alpha_hud = TransparentHudWindow() if TransparentHudWindow else None
 
         # 加载 VSS 弹道标定数据
         self.calib_dists = []
@@ -98,21 +106,68 @@ class VssAssistant:
         elif not self.is_enabled and self._thread_running:
             self._thread_running = False
             self.canvas.delete("vss_hud")
+            if self.alpha_hud:
+                self.alpha_hud.clear()
 
     def _draw_hud(self, valid_targets):
         self.canvas.delete("vss_hud")
         if not self.is_enabled:
+            if self.alpha_hud:
+                self.alpha_hud.clear()
             return
 
         cx, cy, is_found = self.tracker.get_dynamic_center()
 
         if not is_found:
+            if self.alpha_hud:
+                self.alpha_hud.clear()
             warn_y = self.sh * 0.75
             self.canvas.create_text(self.sw/2, warn_y, text="未检测到 VSS 准星",
                                     fill="#E74C3C", font=("Microsoft YaHei", 15, "bold"), tags="vss_hud")
             return
 
         h_line_width = 30
+
+        if self.alpha_hud:
+            elements = [{
+                "type": "line",
+                "x1": cx,
+                "y1": cy,
+                "x2": cx,
+                "y2": self.sh,
+                "fill": "#FFFFFF",
+                "alpha": 255,
+                "width": 1,
+            }]
+            for target in valid_targets:
+                dist = target['dist']
+                color = target['color']
+                if dist <= 100.0:
+                    continue
+                drop_px = np.interp(dist, self.calib_dists, self.calib_drops_ratio) * self.sh
+                target_y = cy + drop_px
+                elements.append({
+                    "type": "line",
+                    "x1": cx - h_line_width,
+                    "y1": target_y,
+                    "x2": cx + h_line_width,
+                    "y2": target_y,
+                    "fill": color,
+                    "alpha": 255,
+                    "width": 1,
+                })
+                elements.append({
+                    "type": "text",
+                    "x": cx + h_line_width + 8,
+                    "y": target_y,
+                    "text": f"{dist:.0f}m",
+                    "fill": color,
+                    "alpha": 153,
+                    "font_size": 14,
+                    "anchor": "lm",
+                })
+            self.alpha_hud.render_elements(elements)
+            return
 
         for target in valid_targets:
             dist = target['dist']
@@ -127,15 +182,15 @@ class VssAssistant:
             target_y = cy + drop_px
 
             # 绘制落点横线
-            self.canvas.create_line(self.center_x - h_line_width, target_y, self.center_x, target_y, fill=color, width=1, tags="vss_hud")
+            self.canvas.create_line(cx - h_line_width, target_y, cx + h_line_width, target_y, fill=color, width=1, tags="vss_hud")
             # 显示距离文字
-            self.canvas.create_text(self.center_x - h_line_width - 5, target_y, text=f"{dist:.0f}m", fill=color,
-                                    font=("Consolas", 12, "bold"), anchor="e", tags="vss_hud")
+            self.canvas.create_text(cx + h_line_width + 8, target_y, text=f"{dist:.0f}m", fill=color,
+                                    font=("Consolas", 14, "bold"), anchor="w", tags="vss_hud")
 
     def _hud_loop(self):
         color_hex_map = {
-            "Yellow": "#E9E39D", "Orange": "#B3500D",
-            "Blue": "#1A3EA3", "Green": "#109166"
+            "Yellow": "#E9E511", "Orange": "#DA6226",
+            "Blue": "#017BC2", "Green": "#0F9D16"
         }
         while self._thread_running:
             mini_dists = self.minimap.get_measured_distance()
@@ -148,3 +203,8 @@ class VssAssistant:
                     })
             self.root.after(0, self._draw_hud, valid_targets)
             time.sleep(1.0 / self.fps)
+
+    def shutdown(self):
+        self._thread_running = False
+        if self.alpha_hud:
+            self.alpha_hud.destroy()

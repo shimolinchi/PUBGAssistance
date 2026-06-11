@@ -103,7 +103,6 @@ class C4Assistant:
         if not self.is_enabled or not self.canvas:
             return
         self.canvas.delete("c4_hud")
-        self._draw_color_indicator()
 
     def on_weapon_detected(self, weapon_name: str, score: float):
         self.c4_equipped = (weapon_name == "C4")
@@ -229,8 +228,6 @@ class C4Assistant:
         cx = self.sw // 2
         cy = self.sh // 2 + 280
 
-        self._draw_color_indicator()   # 始终绘制标点指示器
-
         if self.is_active:
             font_size = 48 if countdown <= 6 else 35
             self.canvas.create_text(cx, cy - 60, text=f"{countdown:.1f} s", fill=color,
@@ -253,7 +250,6 @@ class C4Assistant:
         self.canvas.delete("c4_hud")
         cx = self.sw // 2
         cy = self.sh // 2 + 280
-        self._draw_color_indicator()
         self.canvas.create_text(cx, cy, text="C4 安装中...", fill="#F39C12",
                                 font=("Microsoft YaHei", 15, "bold"), tags="c4_hud")
         self.root.after(4000, lambda: self.canvas.delete("c4_hud") if self.is_active else None)
@@ -292,7 +288,6 @@ class C4Assistant:
             if char not in ['q', 'e']:
                 return
 
-            old_color = self.selected_color
             if char == 'q':
                 idx = self.color_priority.index(self.selected_color)
                 new_idx = (idx - 1) % len(self.color_priority)
@@ -301,12 +296,7 @@ class C4Assistant:
                 idx = self.color_priority.index(self.selected_color)
                 new_idx = (idx + 1) % len(self.color_priority)
                 self.selected_color = self.color_priority[new_idx]
-
-            # 显示临时提示
-            # self.root.after(0, self._show_color_change)
-            # 非活跃状态下，立即刷新显示
-            if not self.is_active and not self.is_installing:
-                self.root.after(0, self._update_status_display)
+            # 主程序统一显示和同步当前使用标点。
         except Exception as e:
             pass
 

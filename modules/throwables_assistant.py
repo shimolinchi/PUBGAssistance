@@ -13,6 +13,14 @@ from pynput.keyboard import Controller as KeyboardController, Key
 from pynput.mouse import Controller as MouseController, Button
 
 try:
+    from modules.transparent_hud import TransparentHudWindow
+except Exception:
+    try:
+        from transparent_hud import TransparentHudWindow
+    except Exception:
+        TransparentHudWindow = None
+
+try:
     from PIL import Image, ImageTk
     PIL_AVAILABLE = True
 except ImportError:
@@ -83,6 +91,7 @@ class ThrowablesAssistant:
 
         self.overlay = None
         self.canvas = None
+        self.alpha_hud = TransparentHudWindow() if TransparentHudWindow else None
         self._init_overlay()
 
     def _load_color_icon(self):
@@ -139,6 +148,8 @@ class ThrowablesAssistant:
         elif not self.is_enabled and self._thread_running:
             self._thread_running = False
             self.canvas.delete("throwables_hud")
+            if self.alpha_hud:
+                self.alpha_hud.clear()
             self.auto_throw_armed = False
             if self.throw_timer:
                 self.throw_timer.cancel()
@@ -258,8 +269,8 @@ class ThrowablesAssistant:
     # ================= 核心渲染循环 =================
     def _hud_loop(self):
         color_hex_map = {
-            "Yellow": "#E3D43C", "Orange": "#B3500D",
-            "Blue": "#1A3EA3", "Green": "#109166"
+            "Yellow": "#E9E511", "Orange": "#DA6226",
+            "Blue": "#017BC2", "Green": "#0F9D16"
         }
         while self._thread_running:
             mini_dists = self.minimap.get_measured_distance()
@@ -277,47 +288,68 @@ class ThrowablesAssistant:
     def _draw_hud(self, valid_targets, color_hex_map):
         self.canvas.delete("throwables_hud")
         if not self.is_enabled:
+            if self.alpha_hud:
+                self.alpha_hud.clear()
             return
 
         cx = self.sw / 2
         cy = self.sh / 2
         bottom_y = self.sh * 0.9
-        self.canvas.create_line(cx, cy, cx, bottom_y, fill="#FFFFFF", width=1, tags="throwables_hud")
 
-        arc_start_deg = 25
-        arc_end_deg = -25
+        if self.alpha_hud:
+            elements = [{
+                "type": "line",
+                "x1": cx,
+                "y1": cy,
+                "x2": cx,
+                "y2": bottom_y,
+                "fill": "#FFFFFF",
+                "alpha": 255,
+                "width": 1,
+            }]
+            h_line_width = 30
+            for target in valid_targets:
+                dist = target['dist']
+                color_hex = target['color']
+                elev_y = np.interp(dist, self.calib_dists, self.calib_elevations_y)
+                elements.append({
+                    "type": "line",
+                    "x1": cx - h_line_width,
+                    "y1": elev_y,
+                    "x2": cx + h_line_width,
+                    "y2": elev_y,
+                    "fill": color_hex,
+                    "alpha": 255,
+                    "width": 1,
+                })
+                elements.append({
+                    "type": "text",
+                    "x": cx + h_line_width + 8,
+                    "y": elev_y,
+                    "text": f"{dist:.0f}m",
+                    "fill": color_hex,
+                    "alpha": 153,
+                    "font_size": 14,
+                    "anchor": "lm",
+                })
+            self.alpha_hud.render_elements(elements)
+            return
+
+        self.canvas.create_line(cx, cy, cx, bottom_y, fill="#FFFFFF", width=1, tags="throwables_hud")
 
         for target in valid_targets:
             dist = target['dist']
             color_hex = target['color']
-            color_name = target['color_name']
-            is_selected = (color_name == self.selected_color)
-            line_width = 3 if is_selected else 1
-            font_weight = "bold" if is_selected else "normal"
 
             # 抬高标尺
             elev_y = np.interp(dist, self.calib_dists, self.calib_elevations_y)
-            self.canvas.create_line(cx, elev_y, cx + 30, elev_y, fill=color_hex, width=line_width, tags="throwables_hud")
-            self.canvas.create_oval(cx + 30, elev_y - 4, cx + 38, elev_y + 4, fill=color_hex, outline="", tags="throwables_hud")
-            self.canvas.create_text(cx + 45, elev_y, text=f"{dist:.0f}m", fill=color_hex,
-                                    font=("Consolas", 12, font_weight), anchor="w", tags="throwables_hud")
+            self.canvas.create_line(cx - 30, elev_y, cx + 30, elev_y, fill=color_hex, width=1, tags="throwables_hud")
+            self.canvas.create_text(cx + 38, elev_y, text=f"{dist:.0f}m", fill=color_hex,
+                                    font=("Consolas", 14, "bold"), anchor="w", tags="throwables_hud")
 
-            # 圆弧瞬爆倒计时
-            target_time = np.interp(dist, self.calib_dists, self.calib_times)
-            target_time = max(0.0, min(target_time, self.grenade_total_time))
-            time_ratio = target_time / self.grenade_total_time
-            current_deg = arc_start_deg + time_ratio * (arc_end_deg - arc_start_deg)
-            rad = math.radians(current_deg)
+        # 当前使用标点由主程序统一显示。
 
-            p_outer_x = cx + self.arc_radius * math.cos(rad)
-            p_outer_y = cy + self.arc_radius * math.sin(rad)
-            p_inner_x = cx + (self.arc_radius - 10) * math.cos(rad)
-            p_inner_y = cy + (self.arc_radius - 10) * math.sin(rad)
-
-            self.canvas.create_line(p_outer_x, p_outer_y, p_inner_x, p_inner_y, fill=color_hex, width=line_width, tags="throwables_hud")
-            text_x = p_outer_x + 10
-            self.canvas.create_text(text_x, p_outer_y, text=f"{target_time:.1f}s", fill=color_hex,
-                                    font=("Consolas", 12, font_weight), anchor="w", tags="throwables_hud")
-
-        # 绘制颜色指示器（文字+图标）
-        self._draw_color_indicator()
+    def shutdown(self):
+        self._thread_running = False
+        if self.alpha_hud:
+            self.alpha_hud.destroy()

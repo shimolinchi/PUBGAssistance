@@ -59,6 +59,7 @@ class EquipmentDetector:
         self._stop = False
         self._last_detected_time = 0
         self._callback = None
+        self.clear_confirm_frames = 2
 
         self.current_weapons = {
             1: {"name": None, "name_score": 0.0, "scope": None, "scope_score": 0.0,
@@ -67,6 +68,10 @@ class EquipmentDetector:
             2: {"name": None, "name_score": 0.0, "scope": None, "scope_score": 0.0,
                 "grip": None, "grip_score": 0.0, "muzzle": None, "muzzle_score": 0.0,
                 "stock": None, "stock_score": 0.0}
+        }
+        self._missing_part_counts = {
+            slot: {key: 0 for key in ["scope", "grip", "muzzle", "stock"]}
+            for slot in [1, 2]
         }
 
     def _load_scaling_config(self) -> Dict[str, Dict[str, int]]:
@@ -333,6 +338,7 @@ class EquipmentDetector:
                     continue
                 else:
                     consecutive_no_numbers = 0
+                    self._last_detected_time = time.time()
 
                 new_weapons = {}
                 for slot in [1, 2]:
@@ -345,16 +351,31 @@ class EquipmentDetector:
                     if new.get("name") is not None and new["name"] != cur.get("name"):
                         cur["name"] = new["name"]
                         cur["name_score"] = new["name_score"]
+                        for key in ["scope", "grip", "muzzle", "stock"]:
+                            self._missing_part_counts[slot][key] = 0
                         changed = True
                     for key in ["scope", "grip", "muzzle", "stock"]:
                         new_val = new.get(key)
                         new_score = new.get(f"{key}_score", 0.0)
                         threshold = self.thresholds.get(key+"s", 0.65)
                         if new_val is not None and new_score >= threshold:
+                            self._missing_part_counts[slot][key] = 0
                             if cur.get(key) != new_val:
                                 cur[key] = new_val
                                 cur[f"{key}_score"] = new_score
                                 changed = True
+                        elif new.get("name") is not None and new.get("name") == cur.get("name"):
+                            if cur.get(key) is not None:
+                                self._missing_part_counts[slot][key] += 1
+                                if self._missing_part_counts[slot][key] >= self.clear_confirm_frames:
+                                    cur[key] = None
+                                    cur[f"{key}_score"] = new_score
+                                    self._missing_part_counts[slot][key] = 0
+                                    changed = True
+                            else:
+                                self._missing_part_counts[slot][key] = 0
+                        else:
+                            self._missing_part_counts[slot][key] = 0
                 if changed and self._callback:
                     self._callback(True, self.current_weapons)
 

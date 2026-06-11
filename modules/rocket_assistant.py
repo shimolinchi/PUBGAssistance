@@ -7,6 +7,14 @@ from ctypes import wintypes
 import json
 import os
 
+try:
+    from modules.transparent_hud import TransparentHudWindow
+except Exception:
+    try:
+        from transparent_hud import TransparentHudWindow
+    except Exception:
+        TransparentHudWindow = None
+
 class RocketAssistant:
     """
     火箭筒/榴弹发射器 战术标尺辅助模块
@@ -60,6 +68,7 @@ class RocketAssistant:
         # 创建透明覆盖层
         self.overlay = None
         self.canvas = None
+        self.alpha_hud = TransparentHudWindow() if TransparentHudWindow else None
         self._init_overlay()
 
     def _init_overlay(self):
@@ -118,6 +127,8 @@ class RocketAssistant:
         elif not self.is_enabled and self._thread_running:
             self._thread_running = False
             self.canvas.delete("rocket_hud")
+            if self.alpha_hud:
+                self.alpha_hud.clear()
 
     def _calculate_drop_ratio(self, distance):
         """根据距离插值计算屏幕下落比例（0~1）"""
@@ -161,14 +172,58 @@ class RocketAssistant:
     def _render_hud(self, data):
         """在主线程中绘制标尺和刻度标记"""
         if not self._thread_running:
+            if self.alpha_hud:
+                self.alpha_hud.clear()
             return
         self.canvas.delete("rocket_hud")
+
+        if self.alpha_hud:
+            elements = [{
+                "type": "line",
+                "x1": self.center_x,
+                "y1": self.center_y,
+                "x2": self.center_x,
+                "y2": self.end_y,
+                "fill": "#FFFFFF",
+                "alpha": 255,
+                "width": 1,
+            }]
+            h_line_width = 30
+            for item in data:
+                c_hex = item["color"]
+                ratio = item["ratio"]
+                dist = item["distance"]
+                if dist > 200:
+                    continue
+                target_y = min(self.center_y + ratio * self.line_length, self.screen_height - 10)
+                elements.append({
+                    "type": "line",
+                    "x1": self.center_x - h_line_width,
+                    "y1": target_y,
+                    "x2": self.center_x + h_line_width,
+                    "y2": target_y,
+                    "fill": c_hex,
+                    "alpha": 255,
+                    "width": 1,
+                })
+                elements.append({
+                    "type": "text",
+                    "x": self.center_x + h_line_width + 8,
+                    "y": target_y,
+                    "text": f"{dist:.0f}m",
+                    "fill": c_hex,
+                    "alpha": 153,
+                    "font_size": 14,
+                    "anchor": "lm",
+                })
+            self.alpha_hud.render_elements(elements)
+            return
 
         # 绘制中心基准线（从准星到底端）
         self.canvas.create_line(self.center_x, self.center_y, self.center_x, self.end_y,
                                 fill="white", width=1, tags="rocket_hud")
 
-        # 绘制每个目标的刻度横线和三角指示器
+        # 绘制每个目标的刻度横线
         h_line_width = 30   # 横线向左延伸的长度（像素）
         for item in data:
             c_hex = item["color"]
@@ -185,20 +240,13 @@ class RocketAssistant:
             if target_y > self.screen_height - 10:
                 target_y = self.screen_height - 10
 
-            left_x = self.center_x - h_line_width
-
             # 画横线
-            self.canvas.create_line(left_x, target_y, self.center_x, target_y,
+            self.canvas.create_line(self.center_x - h_line_width, target_y, self.center_x + h_line_width, target_y,
                                     fill=c_hex, width=1, tags="rocket_hud")
+            self.canvas.create_text(self.center_x + h_line_width + 8, target_y, text=f"{dist:.0f}m",
+                                    fill=c_hex, font=("Consolas", 14, "bold"), anchor="w", tags="rocket_hud")
 
-            # 画左侧三角指示器（尖角指向横线右端）
-            tri_w = 8
-            tri_h = 10
-            pt_tip = (left_x, target_y)
-            pt_top = (left_x - tri_w, target_y - tri_h // 2)
-            pt_bot = (left_x - tri_w, target_y + tri_h // 2)
-            self.canvas.create_polygon(pt_tip, pt_top, pt_bot, fill=c_hex, outline="black", tags="rocket_hud")
-
-            # 显示距离文字（位于三角左侧）
-            self.canvas.create_text(left_x - tri_w - 5, target_y, text=f"{dist:.0f}m",
-                                    fill=c_hex, font=("Consolas", 12, "bold"), anchor="e", tags="rocket_hud")
+    def shutdown(self):
+        self._thread_running = False
+        if self.alpha_hud:
+            self.alpha_hud.destroy()

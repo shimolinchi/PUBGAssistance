@@ -11,10 +11,11 @@ import ctypes
 
 class MinimapRadarModule:
     """PUBG 小地图视觉雷达子模块"""
-    def __init__(self, root, region_manager = None, config_file="config.json"):
+    def __init__(self, root, region_manager = None, config_file="config.json",fps = 30):
         self.root = root  
         self.region_manager = region_manager
         self.config_file = config_file
+        self.fps = fps
 
         # 默认颜色配置
         self.default_colors = {
@@ -26,6 +27,7 @@ class MinimapRadarModule:
         
         # 加载颜色配置
         self.colors = self.load_config()
+        self.color_configs = self._prepare_color_configs()
         
         self.is_enabled = True     
         self.show_display = True      
@@ -37,6 +39,10 @@ class MinimapRadarModule:
         self.overlay = None
         self.canvas = None
         self.monitor = None   # 会在循环中动态更新
+        self.tpl_list = self._load_pnt_templates("templates/pnt/minimap")
+        self.max_tpl_w = max((tpl["w"] for tpl in self.tpl_list), default=1)
+        self.max_tpl_h = max((tpl["h"] for tpl in self.tpl_list), default=1)
+        self.contour_kernel = np.ones((3, 3), np.uint8)
         self._init_overlay()
         self.measured_distance = {"Yellow": 0.0, "Orange": 0.0, "Blue": 0.0, "Green": 0.0}
 
@@ -50,6 +56,21 @@ class MinimapRadarModule:
             except: 
                 pass
         return colors
+
+    def _prepare_color_configs(self):
+        color_configs = []
+        for color_name, config in self.colors.items():
+            lower = config.get("lower")
+            upper = config.get("upper")
+            if lower is None or upper is None:
+                continue
+            color_configs.append({
+                "name": color_name,
+                "lower": np.array(lower, dtype=np.uint8),
+                "upper": np.array(upper, dtype=np.uint8),
+                "hex": config.get("hex", "#FFFFFF")
+            })
+        return color_configs
 
     def _init_overlay(self):
         self.overlay = tk.Toplevel(self.root)
@@ -152,25 +173,69 @@ class MinimapRadarModule:
                 final.append(c)
         return final
 
+    def _load_pnt_templates(self, preferred_dir):
+        for tpl_dir in [preferred_dir, "templates/pnt"]:
+            tpl_list = []
+            if not os.path.isdir(tpl_dir):
+                continue
+            for filename in os.listdir(tpl_dir):
+                if not filename.lower().endswith('.png'):
+                    continue
+                img_bgra = cv2.imread(os.path.join(tpl_dir, filename), cv2.IMREAD_UNCHANGED)
+                if img_bgra is not None and len(img_bgra.shape) == 3 and img_bgra.shape[2] == 4:
+                    alpha = img_bgra[:, :, 3]
+                    _, binary_tpl = cv2.threshold(alpha, 128, 255, cv2.THRESH_BINARY)
+                    tpl_list.append({
+                        "img": binary_tpl,
+                        "w": binary_tpl.shape[1],
+                        "h": binary_tpl.shape[0]
+                    })
+            if tpl_list:
+                print(f"[小地图测距模块] 加载标点模板 {tpl_dir}: {len(tpl_list)} 个")
+                return tpl_list
+        print("[小地图测距模块] 未找到标点模板")
+        return []
+
+    def _match_color_candidates(self, color_mask, color_config):
+        if not self.tpl_list or cv2.countNonZero(color_mask) == 0:
+            return []
+
+        search_mask = cv2.dilate(color_mask, self.contour_kernel, iterations=1)
+        contours, _ = cv2.findContours(search_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if not contours:
+            return []
+
+        frame_h, frame_w = color_mask.shape[:2]
+        candidates = []
+        for contour in contours:
+            x, y, w, h = cv2.boundingRect(contour)
+            if w * h < 4:
+                continue
+
+            x1 = max(0, x - self.max_tpl_w)
+            y1 = max(0, y - self.max_tpl_h)
+            x2 = min(frame_w, x + w + self.max_tpl_w)
+            y2 = min(frame_h, y + h + self.max_tpl_h)
+            roi = color_mask[y1:y2, x1:x2]
+
+            for tpl in self.tpl_list:
+                if roi.shape[0] < tpl["h"] or roi.shape[1] < tpl["w"]:
+                    continue
+                res = cv2.matchTemplate(roi, tpl["img"], cv2.TM_CCOEFF_NORMED)
+                _, max_val, _, max_loc = cv2.minMaxLoc(res)
+                if max_val >= 0.75:
+                    candidates.append({
+                        'x': x1 + max_loc[0] + (tpl["w"] // 2),
+                        'y': y1 + max_loc[1] + tpl["h"],
+                        'color_name': color_config["name"],
+                        'hex': color_config["hex"]
+                    })
+        return candidates
+
     def _cv_process_loop(self):
-        # 预加载模板
-        tpl_list = []
-        tpl_dir = "templates/pnt"
-        if os.path.exists(tpl_dir):
-            for f in os.listdir(tpl_dir):
-                if f.endswith('.png'):
-                    img_bgra = cv2.imread(os.path.join(tpl_dir, f), cv2.IMREAD_UNCHANGED)
-                    if img_bgra is not None and img_bgra.shape[2] == 4:
-                        alpha = img_bgra[:, :, 3]
-                        _, binary_tpl = cv2.threshold(alpha, 128, 255, cv2.THRESH_BINARY)
-                        tpl_list.append({
-                            "img": binary_tpl,
-                            "w": binary_tpl.shape[1],
-                            "h": binary_tpl.shape[0]
-                        })
-        
         with mss.MSS() as sct:
             while self._thread_running:
+                start_time = time.time()
                 # 动态获取小地图区域（兼容 get_region 和 get_real_region）
                 self.monitor = self.region_manager.get_real_region("minimap_region")
                 
@@ -189,22 +254,9 @@ class MinimapRadarModule:
                     candidates = []
                     current_distances = {c: 0.0 for c in self.colors.keys()}
                     
-                    for color_name, config in self.colors.items():
-                        lower = np.array(config["lower"], dtype=np.uint8)
-                        upper = np.array(config["upper"], dtype=np.uint8)
-                        color_mask = cv2.inRange(frame_hsv, lower, upper)
-                        
-                        for tpl in tpl_list:
-                            res = cv2.matchTemplate(color_mask, tpl["img"], cv2.TM_CCOEFF_NORMED)
-                            threshold = 0.75 
-                            loc = np.where(res >= threshold)
-                            for pt in zip(*loc[::-1]):
-                                candidates.append({
-                                    'x': pt[0] + (tpl["w"] // 2), 
-                                    'y': pt[1] + tpl["h"],
-                                    'color_name': color_name,
-                                    'hex': config["hex"]
-                                })
+                    for color_config in self.color_configs:
+                        color_mask = cv2.inRange(frame_hsv, color_config["lower"], color_config["upper"])
+                        candidates.extend(self._match_color_candidates(color_mask, color_config))
                     
                     # NMS 去重
                     final_targets = []
@@ -234,4 +286,5 @@ class MinimapRadarModule:
                 except Exception as e:
                     print(f"[雷达模块线程错误] {e}")
                 
-                time.sleep(0.03)
+                elapsed = time.time() - start_time
+                time.sleep(max(0, (1.0 / self.fps) - elapsed))

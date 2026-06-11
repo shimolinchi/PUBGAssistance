@@ -27,6 +27,7 @@ class ElevationRadarModule:
         self.colors = self.default_colors
         self.load_config()
         self.valid_colors = set(self.colors.keys())
+        self.tpl_list = self._load_pnt_templates("templates/pnt/elevation")
         self.is_enabled = False
         self.show_display = False
         self._thread_running = False
@@ -111,18 +112,26 @@ class ElevationRadarModule:
     def get_measured_elevations(self):
         return self.measured_elevations
 
-    def _cv_process_loop(self):
-        tpl_list = []
-        tpl_dir = "templates/pnt"
-        if os.path.exists(tpl_dir):
-            for f in os.listdir(tpl_dir):
-                if f.endswith('.png'):
-                    img_bgra = cv2.imread(os.path.join(tpl_dir, f), cv2.IMREAD_UNCHANGED)
-                    if img_bgra is not None and img_bgra.shape[2] == 4:
-                        alpha = img_bgra[:, :, 3]
-                        _, binary_tpl = cv2.threshold(alpha, 128, 255, cv2.THRESH_BINARY)
-                        tpl_list.append({"img": binary_tpl, "w": binary_tpl.shape[1], "h": binary_tpl.shape[0]})
+    def _load_pnt_templates(self, preferred_dir):
+        for tpl_dir in [preferred_dir, "templates/pnt"]:
+            tpl_list = []
+            if not os.path.isdir(tpl_dir):
+                continue
+            for filename in os.listdir(tpl_dir):
+                if not filename.lower().endswith('.png'):
+                    continue
+                img_bgra = cv2.imread(os.path.join(tpl_dir, filename), cv2.IMREAD_UNCHANGED)
+                if img_bgra is not None and len(img_bgra.shape) == 3 and img_bgra.shape[2] == 4:
+                    alpha = img_bgra[:, :, 3]
+                    _, binary_tpl = cv2.threshold(alpha, 128, 255, cv2.THRESH_BINARY)
+                    tpl_list.append({"img": binary_tpl, "w": binary_tpl.shape[1], "h": binary_tpl.shape[0]})
+            if tpl_list:
+                print(f"[垂直测高模块] 加载标点模板 {tpl_dir}: {len(tpl_list)} 个")
+                return tpl_list
+        print("[垂直测高模块] 未找到标点模板")
+        return []
 
+    def _cv_process_loop(self):
         with mss.mss() as sct:
             while self._thread_running:
                 monitor = self.region_manager.get_real_region("elevation_region")
@@ -146,7 +155,7 @@ class ElevationRadarModule:
                         upper = np.array(config["upper"], dtype=np.uint8)
                         color_mask = cv2.inRange(frame_hsv, lower, upper)
 
-                        for tpl in tpl_list:
+                        for tpl in self.tpl_list:
                             res = cv2.matchTemplate(color_mask, tpl["img"], cv2.TM_CCOEFF_NORMED)
                             threshold = 0.8
                             loc = np.where(res >= threshold)
