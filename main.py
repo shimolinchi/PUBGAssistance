@@ -247,6 +247,9 @@ class TacticalHub:
             # 传递给 C4 助手
             self.c4_assistant.on_weapon_detected(weapon_name, score)
 
+            if getattr(self.recoil, "is_firing", False):
+                return
+
             if weapon_name and score >= 0.5:
                 self.current_weapon = weapon_name
                 if self.recoil_enabled and weapon_name not in ["Rocket", "Grenade", "VSS", "Crossbow"]:

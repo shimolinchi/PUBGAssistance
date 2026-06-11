@@ -5,61 +5,7 @@
         "width": 457,
         "height": 457
     },
-    "pnt_color_mode": "protanopia",
-    "pnt_colors": {
-        "Yellow": {
-            "lower": [
-                26,
-                150,
-                160
-            ],
-            "upper": [
-                30,
-                255,
-                255
-            ],
-            "hex": "#B9AE15"
-        },
-        "Orange": {
-            "lower": [
-                10,
-                160,
-                160
-            ],
-            "upper": [
-                14,
-                255,
-                255
-            ],
-            "hex": "#B3500D"
-        },
-        "Blue": {
-            "lower": [
-                110,
-                120,
-                160
-            ],
-            "upper": [
-                114,
-                255,
-                255
-            ],
-            "hex": "#1A3FA4"
-        },
-        "Green": {
-            "lower": [
-                78,
-                150,
-                120
-            ],
-            "upper": [
-                82,
-                255,
-                255
-            ],
-            "hex": "#109166"
-        }
-    },
+    "pnt_color_mode": "deuteranopia",
     "pnt_color_modes": {
         "normal": {
             "Yellow": {
@@ -2919,6 +2865,60 @@
         "stance_region": {
             "width": 53,
             "height": 67
+        }
+    },
+    "pnt_colors": {
+        "Yellow": {
+            "lower": [
+                26,
+                150,
+                160
+            ],
+            "upper": [
+                30,
+                255,
+                255
+            ],
+            "hex": "#B9AE15"
+        },
+        "Orange": {
+            "lower": [
+                11,
+                160,
+                160
+            ],
+            "upper": [
+                15,
+                255,
+                255
+            ],
+            "hex": "#A15519"
+        },
+        "Blue": {
+            "lower": [
+                107,
+                120,
+                160
+            ],
+            "upper": [
+                111,
+                255,
+                255
+            ],
+            "hex": "#0046BC"
+        },
+        "Green": {
+            "lower": [
+                78,
+                150,
+                120
+            ],
+            "upper": [
+                82,
+                255,
+                255
+            ],
+            "hex": "#01B377"
         }
     }
 }
