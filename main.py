@@ -47,6 +47,11 @@ try:
 except Exception:
     open_recoil_debugger = None
 
+try:
+    from modules.special_weapon_debugger import open_special_weapon_debugger
+except Exception:
+    open_special_weapon_debugger = None
+
 class RoundedButton(tk.Canvas):
     def __init__(self, parent, width, height, radius, text, command, text_size = -10, is_toggle=False, *args, **kwargs):
         super().__init__(parent, width=width, height=height, bg=parent["bg"], highlightthickness=0, *args, **kwargs)
@@ -208,6 +213,7 @@ class TacticalHub:
         self._is_capturing = False
         self.auto_calibrator_windows = []
         self.recoil_debugger_windows = []
+        self.special_weapon_debugger_windows = []
 
         # 状态覆盖层
         self.assistant_btns = {}          # 关键！
@@ -297,6 +303,7 @@ class TacticalHub:
             "toggle_equipment": "tab"
         }
         self.load_hotkey_config()
+        self.fire_key_str = self.load_fire_key_config()
         self.migrate_legacy_default_hotkeys()
 
         self.init_ui()
@@ -674,7 +681,7 @@ class TacticalHub:
         self.btn_recoil.pack(pady=3)
         recoil_config_frame = tk.Frame(self.launch_tab, bg="#DDE6F0")
         recoil_config_frame.pack(pady=3)
-        self.btn_reload_recoil = RoundedButton(recoil_config_frame, 126, 34, 24, "重载压枪参数", command=self.reload_recoil_config, is_toggle=False, text_size=self.font_small)
+        self.btn_reload_recoil = RoundedButton(recoil_config_frame, 126, 34, 24, "调试特殊武器", command=self.open_special_weapon_debugger, is_toggle=False, text_size=self.font_small)
         self.btn_reload_recoil.grid(row=0, column=0, padx=2)
         self.btn_debug_recoil = RoundedButton(recoil_config_frame, 126, 34, 24, "调试压枪参数", command=self.open_recoil_debugger, is_toggle=False, text_size=self.font_small)
         self.btn_debug_recoil.grid(row=0, column=1, padx=2)
@@ -704,7 +711,7 @@ class TacticalHub:
         self.calib_tab.columnconfigure(1, weight=1, uniform="calib")
         self.btn_debug = RoundedButton(self.calib_tab, 126, 26, 19, "显示所有区域框", command=self.toggle_debug, is_toggle=True, text_size=self.font_small)
         self.btn_debug.grid(row=0, column=0, padx=2, pady=2, sticky="ew")
-        self.btn_auto_scale = RoundedButton(self.calib_tab, 126, 26, 19, "打开缩放校准窗口", command=self.open_auto_scale_calibrator, is_toggle=False, text_size=self.font_small)
+        self.btn_auto_scale = RoundedButton(self.calib_tab, 126, 26, 19, "调试缩放比例", command=self.open_auto_scale_calibrator, is_toggle=False, text_size=self.font_small)
         self.btn_auto_scale.grid(row=0, column=1, padx=2, pady=2, sticky="ew")
 
         # 原有六个区域按钮列表（名称和区域键）
@@ -784,8 +791,8 @@ class TacticalHub:
             ("辅助压枪开关", "toggle_recoil", True),
             ("武器检测开关", "toggle_weapon_detection", True),
             ("打开装备栏", "toggle_equipment", True),
-            ("标点向前切换", "marker_prev", True),
-            ("标点向后切换", "marker_next", True),
+            ("开火按键", "fire_key", True),
+            ("标点前后切换", "marker_pair", True),
             ("地图点位显示", "mouse_map_assist", False),
         ]
         self.key_labels = {}
@@ -802,8 +809,28 @@ class TacticalHub:
             desc_label = tk.Label(left_frame, text=label, bg="#DDE6F0", fg="#333333", font=("Microsoft YaHei", self.font_status, "bold"))
             desc_label.pack(side=tk.LEFT, anchor="w")
 
+            if action == "marker_pair":
+                prev_label = tk.Label(left_frame, text=self.format_hotkey(self.hotkeys["marker_prev"]), bg="#DDE6F0", fg="#2563EB", font=("Consolas", self.font_status, "bold"))
+                prev_label.pack(side=tk.LEFT, padx=(6, 0))
+                self.key_labels["marker_prev"] = prev_label
+                prev_record = RoundedButton(left_frame, 44, 26, 19, "录制",
+                                            command=lambda lbl=prev_label: self.capture_hotkey("marker_prev", lbl),
+                                            is_toggle=False, text_size=self.font_small)
+                prev_record.pack(side=tk.LEFT, padx=(5, 7))
+                next_label = tk.Label(left_frame, text=self.format_hotkey(self.hotkeys["marker_next"]), bg="#DDE6F0", fg="#2563EB", font=("Consolas", self.font_status, "bold"))
+                next_label.pack(side=tk.LEFT, padx=(0, 0))
+                self.key_labels["marker_next"] = next_label
+                record_btn = RoundedButton(func_frame, 50, 26, 19, "录制",
+                                        command=lambda lbl=next_label: self.capture_hotkey("marker_next", lbl),
+                                        is_toggle=False, text_size=self.font_small)
+                record_btn.pack(side="right", padx=4)
+                continue
+
             # 快捷键显示
-            current_key = self.format_hotkey(self.hotkeys[action]) if editable else "鼠标左键 + 中键"
+            if action == "fire_key":
+                current_key = self.format_hotkey(self.fire_key_str)
+            else:
+                current_key = self.format_hotkey(self.hotkeys[action]) if editable else "鼠标左键 + 中键"
             key_label = tk.Label(left_frame, text=current_key, bg="#DDE6F0", fg="#2563EB", font=("Consolas", self.font_status, "bold"))
             key_label.pack(side=tk.LEFT, padx=(6, 0))
             if editable:
@@ -859,6 +886,28 @@ class TacticalHub:
         def on_close():
             if app in self.recoil_debugger_windows:
                 self.recoil_debugger_windows.remove(app)
+            app.on_closing()
+
+        app.root.protocol("WM_DELETE_WINDOW", on_close)
+
+    def open_special_weapon_debugger(self):
+        if not open_special_weapon_debugger:
+            print("[特殊武器调试] special_weapon_debugger 模块不可用")
+            return
+        modules = {
+            "rocket": self.rocket,
+            "vss": self.vss_assist,
+            "crossbow": self.crossbow_assist,
+            "mortar": self.mortar,
+            "throwables": self.throwables,
+            "c4": self.c4_assistant,
+        }
+        app = open_special_weapon_debugger(self.root, self.config_file, modules)
+        self.special_weapon_debugger_windows.append(app)
+
+        def on_close():
+            if app in self.special_weapon_debugger_windows:
+                self.special_weapon_debugger_windows.remove(app)
             app.on_closing()
 
         app.root.protocol("WM_DELETE_WINDOW", on_close)
@@ -958,17 +1007,21 @@ class TacticalHub:
         def finish_capture(main_key):
             combo_str = "+".join(modifiers + [main_key])
             # 手雷瞬爆只允许单键，不允许带修饰键
-            if action_key in ("throw", "toggle_equipment") and modifiers:
-                # 手雷瞬爆和打开装备栏只允许单键，不允许带修饰键
+            if action_key in ("throw", "toggle_equipment", "fire_key") and modifiers:
+                # 手雷瞬爆、打开装备栏和开火按键只允许单键，不允许带修饰键
                 key_label.config(text="仅允许单键")
-                self.root.after(1000, lambda: key_label.config(text=self.format_hotkey(self.hotkeys[action_key])))
+                old_value = self.fire_key_str if action_key == "fire_key" else self.hotkeys[action_key]
+                self.root.after(1000, lambda: key_label.config(text=self.format_hotkey(old_value)))
                 self._is_capturing = False
                 self.restart_listeners()
                 return
 
-            self.hotkeys[action_key] = combo_str
+            if action_key == "fire_key":
+                self.fire_key_str = main_key[1:-1] if main_key.startswith("<") and main_key.endswith(">") else main_key
+            else:
+                self.hotkeys[action_key] = combo_str
             self._is_capturing = False
-            key_label.config(text=self.format_hotkey(combo_str))
+            key_label.config(text=self.format_hotkey(self.fire_key_str if action_key == "fire_key" else combo_str))
             self.root.after(100, self.restart_listeners)
 
         self.temp_listener = keyboard.Listener(on_press=on_press)
@@ -1363,9 +1416,11 @@ class TacticalHub:
                 print(f"已备份至 {backup}")
                 data = {}
         data["hotkeys"] = self.hotkeys
+        data.setdefault("recoil_settings", {})["fire_key"] = self.fire_key_str
         # 写回文件
         with open(self.config_file, 'w', encoding='utf-8') as f:
             json.dump(data, f, indent=4, ensure_ascii=False)
+        self.recoil.reload_config()
         print("[快捷键] 配置已保存")    
     
     def reset_default_hotkeys(self):
@@ -1379,11 +1434,15 @@ class TacticalHub:
             "marker_next": "e",
             "toggle_equipment": "tab"
         }
+        self.fire_key_str = "end"
         self.save_hotkey_config()
         self.restart_listeners()
         # 刷新UI中的快捷键显示
         for action, label in self.key_labels.items():
-            label.config(text=self.format_hotkey(self.hotkeys[action]))
+            if action == "fire_key":
+                label.config(text=self.format_hotkey(self.fire_key_str))
+            else:
+                label.config(text=self.format_hotkey(self.hotkeys[action]))
 
     def load_hotkey_config(self):
         if os.path.exists(self.config_file):
@@ -1394,6 +1453,19 @@ class TacticalHub:
                         self.hotkeys.update(data["hotkeys"])
             except:
                 pass
+
+    def load_fire_key_config(self):
+        if os.path.exists(self.config_file):
+            try:
+                with open(self.config_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                fire_key = str(data.get("recoil_settings", {}).get("fire_key", "end")).strip().lower()
+                if fire_key.startswith("<") and fire_key.endswith(">"):
+                    fire_key = fire_key[1:-1]
+                return fire_key
+            except Exception:
+                pass
+        return "end"
 
     def on_closing(self):
         self.equipment_detector.set_enabled(False)
@@ -1414,6 +1486,12 @@ class TacticalHub:
             except Exception:
                 pass
         self.recoil_debugger_windows.clear()
+        for app in list(getattr(self, "special_weapon_debugger_windows", [])):
+            try:
+                app.on_closing()
+            except Exception:
+                pass
+        self.special_weapon_debugger_windows.clear()
         if self.status_overlay:
             self.status_overlay.destroy()
         for listener in [getattr(self, "keyboard_listener", None), getattr(self, "mouse_listener", None), getattr(self, "hotkey_listener", None)]:

@@ -197,7 +197,9 @@ class RecoilControlModule:
     #         json.dump(config, f, indent=4, ensure_ascii=False)
 
     def _parse_fire_key(self, key_str):
-        key_str = key_str.lower()
+        key_str = str(key_str).strip().lower()
+        if key_str.startswith("<") and key_str.endswith(">"):
+            key_str = key_str[1:-1]
         if hasattr(keyboard.Key, key_str):
             self.fire_key = getattr(keyboard.Key, key_str)
         else:

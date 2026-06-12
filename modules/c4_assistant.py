@@ -5,6 +5,7 @@ import ctypes
 import cv2
 import numpy as np
 import os
+import json
 
 try:
     from PIL import Image, ImageTk
@@ -14,7 +15,7 @@ except ImportError:
     print("[C4助手] Pillow 未安装，图标将显示为文字")
 
 class C4Assistant:
-    def __init__(self, root, region_manager, minimap_module, fps=30, explosion_margin=2.0, target_speed=50.0, jump_distance_threshold=20.0):
+    def __init__(self, root, region_manager, minimap_module, fps=30, explosion_margin=2.0, target_speed=50.0, jump_distance_threshold=20.0, config_file="config.json"):
         self.root = root
         self.rm = region_manager
         self.minimap = minimap_module
@@ -22,6 +23,15 @@ class C4Assistant:
         self.explosion_margin = explosion_margin
         self.target_speed = target_speed
         self.jump_distance_threshold = jump_distance_threshold  # 新增：跳车距离阈值（米）
+        if os.path.exists(config_file):
+            try:
+                with open(config_file, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+                c4_config = config.get("c4_config", {})
+                self.target_speed = c4_config.get("target_speed", self.target_speed)
+                self.jump_distance_threshold = c4_config.get("jump_distance_threshold", self.jump_distance_threshold)
+            except Exception:
+                pass
 
         self.sw = self.rm.real_w
         self.sh = self.rm.real_h

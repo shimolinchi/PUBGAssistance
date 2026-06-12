@@ -116,7 +116,7 @@ class RecoilDebuggerWindow:
             bg="#FFFFFF",
             fg="#6B7280",
             font=("Microsoft YaHei", -12),
-            wraplength=220,
+            wraplength=200,
             justify=tk.LEFT,
         )
         hint.pack(fill=tk.X, padx=10, pady=(0, 8))

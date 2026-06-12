@@ -70,6 +70,12 @@ class ThrowablesAssistant:
         self.calib_dists = []
         self.calib_elevations_y = []
         self.calib_times = []
+        self.jump_calib_dists = []
+        self.jump_calib_elevations_y = []
+        self.jump_calib_times = []
+        self.jump_min_dist = 50.0
+        self.jump_max_dist = 80.0
+        self.jump_delay_after_release = 0.3
         self.grenade_total_time = 5.0
         self.arc_radius = self.sw * 0.097  # 默认值
 
@@ -85,6 +91,13 @@ class ThrowablesAssistant:
                     self.calib_elevations_y = [self.sh * r for r in ratios]
 
                     self.calib_times = data.get("calib_times", [])
+                    self.jump_calib_dists = data.get("jump_calib_dists", [])
+                    jump_ratios = data.get("jump_calib_elevations_ratio", [])
+                    self.jump_calib_elevations_y = [self.sh * r for r in jump_ratios]
+                    self.jump_calib_times = data.get("jump_calib_times", [])
+                    self.jump_min_dist = data.get("jump_min_dist", 50.0)
+                    self.jump_max_dist = data.get("jump_max_dist", 80.0)
+                    self.jump_delay_after_release = data.get("jump_delay_after_release", 0.3)
                     self.grenade_total_time = data.get("grenade_total_time", 5.0)
                     self.arc_radius = self.sw * data.get("arc_radius_ratio", 0.097)
             except Exception as e:
@@ -238,15 +251,24 @@ class ThrowablesAssistant:
             self._show_temporary_warning(f"[ 未检测到 {self.selected_color} 标点 ]")
             return
 
-        if dist > 50.0:
+        use_jump_throw = False
+        if dist >= self.jump_min_dist and dist <= self.jump_max_dist:
+            if not self.jump_calib_dists or not self.jump_calib_times:
+                self._show_temporary_warning("[ 跳投参数未配置 ]")
+                return
+            use_jump_throw = True
+        elif dist > self.jump_max_dist:
             self._show_temporary_warning(f"[ 目标距离 {dist:.1f}m 太远 ]")
             return
 
-        target_time = np.interp(dist, self.calib_dists, self.calib_times)
+        time_dists = self.jump_calib_dists if use_jump_throw else self.calib_dists
+        time_values = self.jump_calib_times if use_jump_throw else self.calib_times
+        target_time = np.interp(dist, time_dists, time_values)
         target_time = max(0.0, min(target_time, self.grenade_total_time))
 
-        print(f"[投掷助手] ⚡ 瞬爆启动! 标点颜色:{self.selected_color} 目标: {dist:.1f}m, 捏雷: {target_time:.2f}s")
-        self._show_temporary_warning(f"自动瞬爆: {dist:.1f}m", color="#2ECC71")
+        mode_text = "跳投瞬爆" if use_jump_throw else "自动瞬爆"
+        print(f"[投掷助手] ⚡ {mode_text}启动! 标点颜色:{self.selected_color} 目标: {dist:.1f}m, 捏雷: {target_time:.2f}s")
+        self._show_temporary_warning(f"{mode_text}: {dist:.1f}m", color="#2ECC71")
 
         # 模拟拉环（按 R）
         self.kb_controller.press(KeyCode.from_char('r'))
@@ -255,13 +277,20 @@ class ThrowablesAssistant:
 
         if self.throw_timer:
             self.throw_timer.cancel()
-        self.throw_timer = threading.Timer(target_time, self._execute_throw)
+        self.throw_timer = threading.Timer(target_time, self._execute_throw, args=(use_jump_throw,))
         self.throw_timer.start()
 
-    def _execute_throw(self):
+    def _execute_throw(self, use_jump_throw=False):
         print("[投掷助手] 💥 瞬爆时机已到，自动抛出！")
         self.kb_controller.release(Key.end)
         self.mouse_controller.release(Button.left)
+        if use_jump_throw:
+            threading.Timer(self.jump_delay_after_release, self._tap_jump_key).start()
+
+    def _tap_jump_key(self):
+        self.kb_controller.press(Key.space)
+        time.sleep(0.03)
+        self.kb_controller.release(Key.space)
 
     # ================= 核心渲染循环 =================
     def _hud_loop(self):
@@ -304,7 +333,7 @@ class ThrowablesAssistant:
             for target in valid_targets:
                 dist = target['dist']
                 color_hex = target['color']
-                elev_y = np.interp(dist, self.calib_dists, self.calib_elevations_y)
+                elev_y = self._get_elevation_y(dist)
                 elements.append({
                     "type": "line",
                     "x1": cx - h_line_width,
@@ -335,12 +364,17 @@ class ThrowablesAssistant:
             color_hex = target['color']
 
             # 抬高标尺
-            elev_y = np.interp(dist, self.calib_dists, self.calib_elevations_y)
+            elev_y = self._get_elevation_y(dist)
             self.canvas.create_line(cx - 30, elev_y, cx + 30, elev_y, fill=color_hex, width=1, tags="throwables_hud")
             self.canvas.create_text(cx + 38, elev_y, text=f"{dist:.0f}m", fill=color_hex,
                                     font=("Consolas", 14, "bold"), anchor="w", tags="throwables_hud")
 
         # 当前使用标点由主程序统一显示。
+
+    def _get_elevation_y(self, dist):
+        if dist >= self.jump_min_dist and dist <= self.jump_max_dist and self.jump_calib_dists and self.jump_calib_elevations_y:
+            return np.interp(dist, self.jump_calib_dists, self.jump_calib_elevations_y)
+        return np.interp(dist, self.calib_dists, self.calib_elevations_y)
 
     def shutdown(self):
         self._thread_running = False
