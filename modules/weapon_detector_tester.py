@@ -21,7 +21,7 @@ class WeaponDetectorTester:
         self.root.configure(bg="#2C3E50")
 
         self.rm = RegionManager(self.root, config_file="config.json")
-        self.detector = WeaponDetector(self.rm, fps=30, match_threshold=0.55, debug=False)
+        self.detector = WeaponDetector(self.rm, fps=30, match_threshold=0.65, debug=False)
 
         self.weapon_list = self._get_available_weapons()
         self.primary1 = tk.StringVar(value="")

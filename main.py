@@ -42,6 +42,11 @@ try:
 except Exception:
     open_region_scaling_auto_calibrator = None
 
+try:
+    from modules.recoil_debugger import open_recoil_debugger
+except Exception:
+    open_recoil_debugger = None
+
 class RoundedButton(tk.Canvas):
     def __init__(self, parent, width, height, radius, text, command, text_size = -10, is_toggle=False, *args, **kwargs):
         super().__init__(parent, width=width, height=height, bg=parent["bg"], highlightthickness=0, *args, **kwargs)
@@ -151,22 +156,12 @@ class TacticalHub:
         self.throwables = ThrowablesAssistant(self.root, self.region_manager, self.minimap, self.elevation, fps=30, config_file=self.config_file)
         self.vss_assist = VssAssistant(self.root, self.region_manager, self.minimap, fps=30, config_file=self.config_file)
         self.crossbow_assist = CrossbowAssistant(self.root, self.region_manager, self.minimap, fps=30, config_file=self.config_file)
-
-        self.weapon_detector = WeaponDetector(self.region_manager, fps=30, match_threshold=0.55)
+        self.weapon_detector = WeaponDetector(self.region_manager, fps=30, match_threshold=0.65)
         self.recoil = RecoilControlModuleNew(config_file=self.config_file)
-        self.gesture_id = GestureIdentifier(region_manager=self.region_manager, match_threshold=0.55, fps=30)
+        self.gesture_id = GestureIdentifier(region_manager=self.region_manager, match_threshold=0.65, fps=30)
         self.equipment_detector = EquipmentDetector(self.region_manager, fps=30, idle_timeout=10.0, on_status_change=self.on_equipment_status)
+        self.c4_assistant = C4Assistant(self.root, self.region_manager, self.minimap, fps=30, explosion_margin=2.0, target_speed=50.0,  jump_distance_threshold=20.0)
 
-        # 新增：C4 助手
-        self.c4_assistant = C4Assistant(
-            root=self.root,
-            region_manager=self.region_manager,
-            minimap_module=self.minimap,
-            fps=30,
-            explosion_margin=2.0,
-            target_speed=50.0,
-            jump_distance_threshold=20.0
-        )
         self.special_assistant_modules = {
             "mortar": self.mortar,
             "rocket": self.rocket,
@@ -212,6 +207,7 @@ class TacticalHub:
         self.alt_pressed = False
         self._is_capturing = False
         self.auto_calibrator_windows = []
+        self.recoil_debugger_windows = []
 
         # 状态覆盖层
         self.assistant_btns = {}          # 关键！
@@ -676,8 +672,12 @@ class TacticalHub:
         self.btn_display.pack(pady=3)
         self.btn_recoil = RoundedButton(self.launch_tab, 256, 34, 24, "开启辅助压枪", command=self.toggle_recoil, is_toggle=True, text_size=self.font_large)
         self.btn_recoil.pack(pady=3)
-        self.btn_reload_recoil = RoundedButton(self.launch_tab, 256, 34, 24, "重新加载压枪配置", command=self.reload_recoil_config, is_toggle=False, text_size=self.font_large)
-        self.btn_reload_recoil.pack(pady=3)
+        recoil_config_frame = tk.Frame(self.launch_tab, bg="#DDE6F0")
+        recoil_config_frame.pack(pady=3)
+        self.btn_reload_recoil = RoundedButton(recoil_config_frame, 126, 34, 24, "重载压枪参数", command=self.reload_recoil_config, is_toggle=False, text_size=self.font_small)
+        self.btn_reload_recoil.grid(row=0, column=0, padx=2)
+        self.btn_debug_recoil = RoundedButton(recoil_config_frame, 126, 34, 24, "调试压枪参数", command=self.open_recoil_debugger, is_toggle=False, text_size=self.font_small)
+        self.btn_debug_recoil.grid(row=0, column=1, padx=2)
 
         tk.Label(self.launch_tab, text="--启用特殊武器助手--", bg="#DDE6F0", fg="#6B7280", font=("Microsoft YaHei", self.font_status, "bold")).pack(pady=4)
 
@@ -828,6 +828,40 @@ class TacticalHub:
     
     def reload_recoil_config(self):
         self.recoil.reload_config()
+
+    def set_recoil_state_from_debugger(self, enabled):
+        self.recoil_enabled = bool(enabled)
+        self.btn_recoil.set_active(self.recoil_enabled)
+        self.btn_recoil.set_text(f"{'关闭' if self.recoil_enabled else '开启'}辅助压枪")
+        if self.recoil_enabled:
+            if self.current_weapon and self.current_weapon not in ["Rocket", "Grenade", "VSS", "Crossbow", "C4"]:
+                self.recoil.update_current_weapon(self.current_weapon)
+                slot = self.weapon_slot_map.get(self.current_weapon)
+                if slot:
+                    weapon_data = self.current_weapons_attachments.get(slot, {})
+                    self.recoil.update_attachments({
+                        "scope": weapon_data.get("scope"),
+                        "grip": weapon_data.get("grip"),
+                        "muzzle": weapon_data.get("muzzle"),
+                        "stock": weapon_data.get("stock"),
+                    })
+            if self.current_gesture:
+                self.recoil.update_stance(self.current_gesture)
+        self.update_status_display()
+
+    def open_recoil_debugger(self):
+        if not open_recoil_debugger:
+            print("[压枪调试] recoil_debugger 模块不可用")
+            return
+        app = open_recoil_debugger(self.root, self.recoil)
+        self.recoil_debugger_windows.append(app)
+
+        def on_close():
+            if app in self.recoil_debugger_windows:
+                self.recoil_debugger_windows.remove(app)
+            app.on_closing()
+
+        app.root.protocol("WM_DELETE_WINDOW", on_close)
 
     def open_auto_scale_calibrator(self):
         if not open_region_scaling_auto_calibrator:
@@ -1148,6 +1182,12 @@ class TacticalHub:
         for key, module in self.special_assistant_modules.items():
             if key == "mortar":
                 continue
+            if key == "c4" and self.display_enabled and (module.is_installing or module.is_active):
+                should_enable = True
+                module.enable_module(True)
+                if key in self.assistant_btns:
+                    self.assistant_btns[key].set_active(module.is_enabled)
+                continue
             should_enable = self.display_enabled and (key in self.manual_assistant_keys or key == auto_key)
             module.enable_module(should_enable)
             if key in self.assistant_btns:
@@ -1285,6 +1325,8 @@ class TacticalHub:
         # 左键按下时通知 C4 助手（用于安装 C4）
         if button == mouse.Button.left and pressed:
             self.c4_assistant.on_mouse_left_press()
+        elif button == mouse.Button.right:
+            self.c4_assistant.on_mouse_right_click(pressed)
 
         # 左键+中键 地图点位助手
         if button == mouse.Button.left:
@@ -1366,6 +1408,12 @@ class TacticalHub:
             if hasattr(assistant, "shutdown"):
                 assistant.shutdown()
         self.c4_assistant.shutdown()   # 关闭 C4 助手
+        for app in list(getattr(self, "recoil_debugger_windows", [])):
+            try:
+                app.on_closing()
+            except Exception:
+                pass
+        self.recoil_debugger_windows.clear()
         if self.status_overlay:
             self.status_overlay.destroy()
         for listener in [getattr(self, "keyboard_listener", None), getattr(self, "mouse_listener", None), getattr(self, "hotkey_listener", None)]:

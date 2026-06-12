@@ -36,6 +36,9 @@ class C4Assistant:
         self.is_installing = False
         self.is_active = False
         self.install_start_time = 0
+        self.cancel_right_pressed = False
+        self.cancel_right_press_time = 0
+        self.cancel_hold_seconds = 0.35
         self.explosion_time = 0
         self.thread_running = False
         self.update_thread = None
@@ -104,6 +107,8 @@ class C4Assistant:
         self.canvas.delete("c4_hud")
 
     def on_weapon_detected(self, weapon_name: str, score: float):
+        if self.is_installing or self.is_active:
+            return
         self.c4_equipped = (weapon_name == "C4")
         if not self.c4_equipped:
             self._reset()
@@ -113,8 +118,37 @@ class C4Assistant:
             return
         self.is_installing = True
         self.install_start_time = time.time()
+        self.cancel_right_pressed = False
+        self.cancel_right_press_time = 0
         self._show_installing()
         self.root.after(4000, self._on_install_finish)
+
+    def on_mouse_right_click(self, pressed):
+        if not self.is_installing or self.is_active:
+            self.cancel_right_pressed = False
+            self.cancel_right_press_time = 0
+            return
+        if pressed:
+            self.cancel_right_pressed = True
+            self.cancel_right_press_time = time.time()
+            self.root.after(int(self.cancel_hold_seconds * 1000), self._check_cancel_install)
+        else:
+            self.cancel_right_pressed = False
+            self.cancel_right_press_time = 0
+
+    def _check_cancel_install(self):
+        if not self.is_installing or self.is_active or not self.cancel_right_pressed:
+            return
+        if time.time() - self.cancel_right_press_time >= self.cancel_hold_seconds:
+            self._cancel_install()
+
+    def _cancel_install(self):
+        if not self.is_installing:
+            return
+        self.is_installing = False
+        self.cancel_right_pressed = False
+        self.cancel_right_press_time = 0
+        self._clear_display()
 
     def _on_install_finish(self):
         if not self.is_installing:
@@ -248,7 +282,7 @@ class C4Assistant:
         self.canvas.delete("c4_hud")
         cx = self.sw // 2
         cy = self.sh // 2 + 280
-        self.canvas.create_text(cx, cy, text="C4 安装中...", fill="#F39C12",
+        self.canvas.create_text(cx, cy, text="C4安装中，长按鼠标右键取消", fill="#F39C12",
                                 font=("Microsoft YaHei", 15, "bold"), tags="c4_hud")
         self.root.after(4000, lambda: self.canvas.delete("c4_hud") if self.is_active else None)
 
@@ -264,6 +298,8 @@ class C4Assistant:
         self.update_thread = None
         self.is_installing = False
         self.is_active = False
+        self.cancel_right_pressed = False
+        self.cancel_right_press_time = 0
         self.distance = 0.0
         self.start_prompt_shown = False
         self.jump_prompt_shown = False            # 重置跳车提示标志

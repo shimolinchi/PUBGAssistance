@@ -22,10 +22,9 @@ class RecoilControlModule:
         self.current_weapon = None
         self.weapon_type = "ar"          # 武器类型：ar, smg, lmg, dmr
         self.base_recoil = 0.0
+        self.recoil_curve = []
+        self.recoil_curve_step = 0.4
         self.auto_fire_enabled = False
-        self.coeff_a = 0.0
-        self.coeff_b = 0.0
-        self.coeff_c = 0.0
 
         # 配件/姿势系数
         self.total_multiplier = 1.0
@@ -39,6 +38,10 @@ class RecoilControlModule:
         # 配置字典
         self.weapon_configs = {}
         self.stance_multipliers = {}      # 由武器类型索引的姿势系数
+        self.scope_multiplier_curves = {}
+        self.grip_multiplier_curves = {}
+        self.muzzle_multiplier_curves = {}
+        self.stock_multiplier_curves = {}
         self.scope_multipliers = {}
         self.grip_multipliers = {}
         self.muzzle_multipliers = {}
@@ -71,6 +74,7 @@ class RecoilControlModule:
                         self.fire_key_str = rc.get("fire_key", "end")
                         self._parse_fire_key(self.fire_key_str)
                         self.recoil_delay = rc.get("recoil_delay", 0.02)
+                        self.recoil_curve_step = rc.get("recoil_curve_step", 0.4)
                         self.weapon_configs = rc.get("weapons", {})
                         # 读取姿势系数（嵌套字典）
                         self.stance_multipliers = rc.get("stance_multipliers", {})
@@ -84,23 +88,24 @@ class RecoilControlModule:
                         for wtype, vals in default_stance.items():
                             if wtype not in self.stance_multipliers:
                                 self.stance_multipliers[wtype] = vals
-                        # 其他系数
-                        self.scope_multipliers = rc.get("scope_multipliers", {})
-                        self.grip_multipliers = rc.get("grip_multipliers", {})
-                        self.muzzle_multipliers = rc.get("muzzle_multipliers", {})
-                        self.stock_multipliers = rc.get("stock_multipliers", {})
+                        # 配件系数曲线，公开的 *_multipliers 保留 0 秒值，兼容测试工具。
+                        self.scope_multiplier_curves = self._normalize_multiplier_curves(rc.get("scope_multipliers", {}))
+                        self.grip_multiplier_curves = self._normalize_multiplier_curves(rc.get("grip_multipliers", {}))
+                        self.muzzle_multiplier_curves = self._normalize_multiplier_curves(rc.get("muzzle_multipliers", {}))
+                        self.stock_multiplier_curves = self._normalize_multiplier_curves(rc.get("stock_multipliers", {}))
+                        self.scope_multipliers = self._first_values(self.scope_multiplier_curves)
+                        self.grip_multipliers = self._first_values(self.grip_multiplier_curves)
+                        self.muzzle_multipliers = self._first_values(self.muzzle_multiplier_curves)
+                        self.stock_multipliers = self._first_values(self.stock_multiplier_curves)
                 except Exception as e:
                     print(f"[压枪模块] 配置加载失败: {e}")
 
     def _init_default_config(self):
         self.weapon_configs = {
-            "M416": {"base": 10.0, "auto_fire": False, "type": "ar",
-                     "coeff_a": 2.0, "coeff_b": 12.0, "coeff_c": 0.64},
-            "AKM": {"base": 12.0, "auto_fire": False, "type": "ar",
-                    "coeff_a": 3.0, "coeff_b": 15.0, "coeff_c": 0.49},
-            "MP5K": {"base": 8.0, "auto_fire": False, "type": "smg",
-                     "coeff_a": 1.0, "coeff_b": 10.0, "coeff_c": 0.5},
-            "SKS": {"base": 15.0, "auto_fire": True, "type": "dmr"}
+            "M416": {"recoil_curve": [10.0, 12.0, 14.0], "auto_fire": False, "type": "ar"},
+            "AKM": {"recoil_curve": [12.0, 14.0, 16.0], "auto_fire": False, "type": "ar"},
+            "MP5K": {"recoil_curve": [8.0, 10.0, 12.0], "auto_fire": False, "type": "smg"},
+            "SKS": {"recoil_curve": [15.0], "auto_fire": False, "type": "dmr"}
         }
         self.stance_multipliers = {
             "ar": {"stand": 1.0, "squat": 0.8, "lie": 0.6},
@@ -108,10 +113,67 @@ class RecoilControlModule:
             "lmg": {"stand": 1.0, "squat": 0.4, "lie": 0.2},
             "dmr": {"stand": 1.0, "squat": 0.8, "lie": 0.6}
         }
-        self.scope_multipliers = {"red_dot": 1.2, "holo": 1.2, "x2": 2.0, "x3": 3.0, "x4": 4.0, "x6": 6.0}
-        self.grip_multipliers = {"vertical": 0.9, "half": 1.0, "light": 1.0}
-        self.muzzle_multipliers = {"compensator": 0.85, "flash_hider": 0.95}
-        self.stock_multipliers = {"tactical": 0.9}
+        self.scope_multiplier_curves = {"red_dot": [1.2], "holo": [1.2], "x2": [2.0], "x3": [3.0], "x4": [4.0], "x6": [6.0]}
+        self.grip_multiplier_curves = {"vertical": [0.9], "half": [1.0], "light": [1.0]}
+        self.muzzle_multiplier_curves = {"compensator": [0.85], "flash_hider": [0.95]}
+        self.stock_multiplier_curves = {"tactical": [0.9]}
+        self.scope_multipliers = self._first_values(self.scope_multiplier_curves)
+        self.grip_multipliers = self._first_values(self.grip_multiplier_curves)
+        self.muzzle_multipliers = self._first_values(self.muzzle_multiplier_curves)
+        self.stock_multipliers = self._first_values(self.stock_multiplier_curves)
+
+    def _normalize_curve(self, value, default=1.0):
+        if isinstance(value, list):
+            curve = value
+        elif value is None:
+            curve = [default]
+        else:
+            curve = [value]
+        normalized = []
+        for item in curve:
+            try:
+                normalized.append(float(item))
+            except (TypeError, ValueError):
+                pass
+        return normalized or [float(default)]
+
+    def _normalize_multiplier_curves(self, multiplier_config):
+        return {key: self._normalize_curve(value, 1.0) for key, value in multiplier_config.items()}
+
+    def _first_values(self, curve_config):
+        return {key: values[0] for key, values in curve_config.items() if values}
+
+    def _sample_curve(self, curve, elapsed_time):
+        curve = self._normalize_curve(curve, 0.0)
+        if len(curve) == 1:
+            return curve[0]
+
+        step = max(float(self.recoil_curve_step), 0.001)
+        position = max(0.0, elapsed_time) / step
+        left_index = int(position)
+        if left_index >= len(curve) - 1:
+            return curve[-1]
+
+        ratio = position - left_index
+        return curve[left_index] + (curve[left_index + 1] - curve[left_index]) * ratio
+
+    def _get_multiplier(self, curve_config, key, elapsed_time):
+        if not key:
+            return 1.0
+        return self._sample_curve(curve_config.get(key, [1.0]), elapsed_time)
+
+    def _calculate_recoil_strength(self, elapsed_time):
+        if not self.current_weapon or not self.recoil_curve:
+            return 0.0
+
+        weapon_recoil = self._sample_curve(self.recoil_curve, elapsed_time)
+        scope_mult = self._get_multiplier(self.scope_multiplier_curves, self.scope, elapsed_time)
+        grip_mult = self._get_multiplier(self.grip_multiplier_curves, self.grip, elapsed_time)
+        muzzle_mult = self._get_multiplier(self.muzzle_multiplier_curves, self.muzzle, elapsed_time)
+        stock_mult = self._get_multiplier(self.stock_multiplier_curves, self.stock, elapsed_time)
+        stance_mult = self.current_stance_multipliers.get(self.current_stance, 1.0)
+        self.total_multiplier = scope_mult * grip_mult * muzzle_mult * stock_mult * stance_mult
+        return weapon_recoil * self.total_multiplier
 
     # def save_config(self):
     #     config = {}
@@ -144,6 +206,37 @@ class RecoilControlModule:
     # ================= 外部接口 =================
     def set_enabled(self, enabled: bool):
         self.is_enabled = enabled
+        if not enabled:
+            self.is_firing = False
+            self.fire_start_time = 0
+            try:
+                self.kb.release(self.fire_key)
+            except Exception:
+                pass
+
+    def save_config(self):
+        config = {}
+        if os.path.exists(self.config_file):
+            try:
+                with open(self.config_file, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+            except Exception:
+                config = {}
+
+        config["recoil_settings"] = {
+            "fire_key": self.fire_key_str,
+            "recoil_delay": self.recoil_delay,
+            "recoil_curve_step": self.recoil_curve_step,
+            "weapons": self.weapon_configs,
+            "stance_multipliers": self.stance_multipliers,
+            "scope_multipliers": self.scope_multiplier_curves,
+            "grip_multipliers": self.grip_multiplier_curves,
+            "muzzle_multipliers": self.muzzle_multiplier_curves,
+            "stock_multipliers": self.stock_multiplier_curves,
+        }
+        with open(self.config_file, 'w', encoding='utf-8') as f:
+            json.dump(config, f, indent=4, ensure_ascii=False)
+        print("[压枪模块] 配置已保存")
 
     def update_current_weapon(self, weapon_name: str):
         if weapon_name == self.current_weapon:
@@ -153,21 +246,13 @@ class RecoilControlModule:
         self.kb.release(self.fire_key)
         self.current_weapon = weapon_name
         wp_data = self.weapon_configs.get(weapon_name, {})
-        self.base_recoil = wp_data.get("base", 0.0)
+        self.recoil_curve = self._normalize_curve(wp_data.get("recoil_curve", wp_data.get("base", 0.0)), 0.0)
+        self.base_recoil = self.recoil_curve[0] if self.recoil_curve else 0.0
         self.auto_fire_enabled = wp_data.get("auto_fire", False)
         self.weapon_type = wp_data.get("type", "ar")
 
-        # 读取动态压枪系数（DMR 不需要）
-        self.coeff_a = wp_data.get("coeff_a", 0.0)
-        self.coeff_b = wp_data.get("coeff_b", 0.0)
-        self.coeff_c = wp_data.get("coeff_c", 0.0)
-        if self.coeff_a == 0 and self.coeff_b == 0 and self.coeff_c == 0:
-            old_inc = wp_data.get("dynamic_increment_per_second", 0.0)
-            if old_inc != 0:
-                self.coeff_a = old_inc
-
         self.current_stance_multipliers = self.stance_multipliers.get(self.weapon_type,
-                                                                     {"stand": 1.0, "squat": 0.8, "lie": 0.6})
+                                                                      {"stand": 1.0, "squat": 0.8, "lie": 0.6})
         self._recalculate_multiplier()
 
     def update_attachments(self, attachments: dict):
@@ -187,21 +272,12 @@ class RecoilControlModule:
             self._recalculate_multiplier()
 
     def _recalculate_multiplier(self):
-        if not self.current_weapon or self.base_recoil == 0:
+        if not self.current_weapon or not self.recoil_curve or self.base_recoil == 0:
             self.total_multiplier = 1.0
             self.current_recoil_strength = 0
             return
-
-        scope_mult = self.scope_multipliers.get(self.scope, 1.0)
-        grip_mult = self.grip_multipliers.get(self.grip, 1.0) if self.grip else 1.0
-        muzzle_mult = self.muzzle_multipliers.get(self.muzzle, 1.0) if self.muzzle else 1.0
-        stock_mult = self.stock_multipliers.get(self.stock, 1.0) if self.stock else 1.0
-        stance_mult = self.current_stance_multipliers.get(self.current_stance, 1.0)
-
-        self.total_multiplier = scope_mult * grip_mult * muzzle_mult * stock_mult * stance_mult
-        static_strength = self.base_recoil * self.total_multiplier
+        static_strength = self._calculate_recoil_strength(0.0)
         self.current_recoil_strength = int(round(static_strength))
-        # print(f"[压枪静态] {self.current_weapon} (类型:{self.weapon_type}) | 姿势:{self.current_stance} | 倍镜:{self.scope} | 握把:{self.grip} | 枪口:{self.muzzle} | 枪托:{self.stock} -> 初始力度: {self.current_recoil_strength}px/tick")
 
     # ================= 事件处理 =================
     def _on_mouse_click(self, x, y, button, pressed):
@@ -224,7 +300,7 @@ class RecoilControlModule:
 
         if self.weapon_type == "dmr":
             # DMR：单次压枪，不启动状态机
-            strength = int(round(self.base_recoil * self.total_multiplier))
+            strength = int(round(self._calculate_recoil_strength(0.0)))
             if strength > 0:
                 threading.Thread(
                     target=lambda: ctypes.windll.user32.mouse_event(MOUSEEVENTF_MOVE, 0, strength, 0, 0),
@@ -251,12 +327,7 @@ class RecoilControlModule:
 
             if self.is_enabled and self.is_firing and self.current_weapon and self.weapon_type != "dmr":
                 t = max(0, time.time() - self.fire_start_time)
-                t2 = t * t
-                if self.coeff_c != 0:
-                    inc = self.coeff_a * t + self.coeff_b * t2 / (self.coeff_c + t2)
-                else:
-                    inc = self.coeff_a * t + (self.coeff_b if t > 0 else 0.0)
-                total = (self.base_recoil + inc) * self.total_multiplier
+                total = self._calculate_recoil_strength(t)
                 strength = int(round(total))
                 self.current_recoil_strength = strength
 
@@ -277,18 +348,12 @@ class RecoilControlModule:
         self._load_config()
         if self.current_weapon:
             wp_data = self.weapon_configs.get(self.current_weapon, {})
-            self.base_recoil = wp_data.get("base", 0.0)
+            self.recoil_curve = self._normalize_curve(wp_data.get("recoil_curve", wp_data.get("base", 0.0)), 0.0)
+            self.base_recoil = self.recoil_curve[0] if self.recoil_curve else 0.0
             self.auto_fire_enabled = wp_data.get("auto_fire", False)
             self.weapon_type = wp_data.get("type", "ar")
-            self.coeff_a = wp_data.get("coeff_a", 0.0)
-            self.coeff_b = wp_data.get("coeff_b", 0.0)
-            self.coeff_c = wp_data.get("coeff_c", 0.0)
-            if self.coeff_a == 0 and self.coeff_b == 0 and self.coeff_c == 0:
-                old_inc = wp_data.get("dynamic_increment_per_second", 0.0)
-                if old_inc != 0:
-                    self.coeff_a = old_inc
             self.current_stance_multipliers = self.stance_multipliers.get(self.weapon_type,
-                                                                         {"stand": 1.0, "squat": 0.8, "lie": 0.6})
+                                                                          {"stand": 1.0, "squat": 0.8, "lie": 0.6})
             self._recalculate_multiplier()
         print("[压枪模块] 配置已重新加载")
 
