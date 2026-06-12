@@ -7,9 +7,9 @@ import mss
 import json
 import os
 import ctypes
-from modules.hair_tracker import HairTracker
+from hair_tracker import HairTracker
 try:
-    from modules.transparent_hud import TransparentHudWindow
+    from transparent_hud import TransparentHudWindow
 except Exception:
     try:
         from transparent_hud import TransparentHudWindow
@@ -30,12 +30,19 @@ class CrossbowAssistant:
         self.center_y = self.sh / 2
 
         # 传入 region_manager 给 HairTracker
-        self.tracker = HairTracker(self.sw, self.sh, self.region_manager, show_debug=True)
+        self.tracker = HairTracker(self.sw, self.sh, self.region_manager, show_debug=False)
 
         self.is_enabled = False
         self._thread_running = False
         self.hud_thread = None
-        self.alpha_hud = TransparentHudWindow() if TransparentHudWindow else None
+        self.alpha_hud = None
+        if TransparentHudWindow:
+            try:
+                self.alpha_hud = TransparentHudWindow()
+            except Exception as e:
+                print(f"[十字弩助手] 透明HUD创建失败，使用Tk覆盖层: {e}")
+        self.overlay = None
+        self.canvas = None
         self.color_hex_map = {"Yellow": "#E9E511", "Orange": "#DA6226", "Blue": "#017BC2", "Green": "#0F9D16"}
 
         # 加载弩的弹道标定数据
@@ -51,7 +58,8 @@ class CrossbowAssistant:
             except:
                 pass
 
-        self._init_overlay()
+        if not self.alpha_hud:
+            self._init_overlay()
 
     def set_pnt_colors(self, colors):
         self.color_hex_map = {name: data.get("hex", "#FFFFFF") for name, data in colors.items()}
@@ -101,12 +109,14 @@ class CrossbowAssistant:
             self.hud_thread.start()
         elif not self.is_enabled and self._thread_running:
             self._thread_running = False
-            self.canvas.delete("crossbow_hud")
+            if self.canvas:
+                self.canvas.delete("crossbow_hud")
             if self.alpha_hud:
                 self.alpha_hud.clear()
 
     def _draw_hud(self, valid_targets):
-        self.canvas.delete("crossbow_hud")
+        if self.canvas:
+            self.canvas.delete("crossbow_hud")
         if not self.is_enabled:
             if self.alpha_hud:
                 self.alpha_hud.clear()
@@ -118,14 +128,38 @@ class CrossbowAssistant:
             if self.alpha_hud:
                 self.alpha_hud.clear()
             warn_y = self.sh * 0.75
-            self.canvas.create_text(self.sw/2, warn_y, text="未检测到十字弩准星",
-                                    fill="#E74C3C", font=("Microsoft YaHei", 15, "bold"), tags="crossbow_hud")
+            if self.canvas:
+                self.canvas.create_text(self.sw/2, warn_y, text="未检测到十字弩准星",
+                                        fill="#E74C3C", font=("Microsoft YaHei", 15, "bold"), tags="crossbow_hud")
             return
-
-        h_line_width = 30
+        marker_half = 5
+        cross_half = 5
+        line_half = 30
+        text_offset = line_half + 8
 
         if self.alpha_hud:
-            elements = []
+            elements = [{
+                "type": "line",
+                "x1": cx - cross_half,
+                "y1": cy - cross_half,
+                "x2": cx + cross_half,
+                "y2": cy + cross_half,
+                "fill": "#000000",
+                "alpha": 255,
+                "width": 2,
+            }, {
+                "type": "line",
+                "x1": cx - cross_half,
+                "y1": cy + cross_half,
+                "x2": cx + cross_half,
+                "y2": cy - cross_half,
+                "fill": "#000000",
+                "alpha": 255,
+                "width": 2,
+            }]
+            if not self.calib_dists or not self.calib_drops_ratio:
+                self.alpha_hud.render_elements(elements)
+                return
             for target in valid_targets:
                 dist = target['dist']
                 color = target['color']
@@ -136,19 +170,9 @@ class CrossbowAssistant:
                 target_y = cy + drop_px
                 elements.append({
                     "type": "line",
-                    "x1": cx - h_line_width,
-                    "y1": cy,
-                    "x2": cx + h_line_width,
-                    "y2": cy,
-                    "fill": color,
-                    "alpha": 255,
-                    "width": 1,
-                })
-                elements.append({
-                    "type": "line",
-                    "x1": cx - h_line_width,
+                    "x1": cx - line_half,
                     "y1": target_y,
-                    "x2": cx + h_line_width,
+                    "x2": cx + line_half,
                     "y2": target_y,
                     "fill": color,
                     "alpha": 255,
@@ -156,7 +180,7 @@ class CrossbowAssistant:
                 })
                 elements.append({
                     "type": "text",
-                    "x": cx + h_line_width + 8,
+                    "x": cx + text_offset,
                     "y": target_y,
                     "text": f"{dist:.0f}m",
                     "fill": color,
@@ -165,6 +189,13 @@ class CrossbowAssistant:
                     "anchor": "lm",
                 })
             self.alpha_hud.render_elements(elements)
+            return
+
+        self.canvas.create_line(cx - cross_half, cy - cross_half, cx + cross_half, cy + cross_half,
+                                fill="#000000", width=2, tags="crossbow_hud")
+        self.canvas.create_line(cx - cross_half, cy + cross_half, cx + cross_half, cy - cross_half,
+                                fill="#000000", width=2, tags="crossbow_hud")
+        if not self.calib_dists or not self.calib_drops_ratio:
             return
 
         for target in valid_targets:
@@ -178,12 +209,11 @@ class CrossbowAssistant:
             drop_px = drop_ratio * self.sh
             target_y = cy + drop_px
 
-            # 准星横线
-            self.canvas.create_line(cx - h_line_width, cy, cx + h_line_width, cy, fill=color, width=1, tags="crossbow_hud")
             # 落点横线
-            self.canvas.create_line(cx - h_line_width, target_y, cx + h_line_width, target_y, fill=color, width=1, tags="crossbow_hud")
+            self.canvas.create_line(cx - line_half, target_y, cx + line_half, target_y,
+                                    fill=color, width=1, tags="crossbow_hud")
             # 距离文字
-            self.canvas.create_text(cx + h_line_width + 8, target_y, text=f"{dist:.0f}m", fill=color,
+            self.canvas.create_text(cx + text_offset, target_y, text=f"{dist:.0f}m", fill=color,
                                     font=("Consolas", 14, "bold"), anchor="w", tags="crossbow_hud")
 
     def _hud_loop(self):
@@ -203,3 +233,5 @@ class CrossbowAssistant:
         self._thread_running = False
         if self.alpha_hud:
             self.alpha_hud.destroy()
+        if self.overlay:
+            self.overlay.destroy()
