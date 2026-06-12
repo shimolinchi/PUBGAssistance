@@ -27,11 +27,11 @@ class JumpThrowCalibrator:
         print("=======================================")
 
     def on_key_press(self, key):
-        if key in (keyboard.Key.f1, keyboard.Key.esc):
+        if key in (keyboard.Key.f1, keyboard.Key.delete):
             print("退出跳投标定程序")
             return False
         try:
-            if hasattr(key, "char") and key.char and key.char.lower() == "v":
+            if hasattr(key, "char") and key.char and key.char.lower() == "b":
                 with self.lock:
                     self.armed = True
                 print("[已就绪] 等待鼠标左键松开...")

@@ -62,6 +62,9 @@ class RegionManagerTester:
             ("📈 仰角区域 (elevation_region)", "elevation_region"),
             ("🧭 指南针区域 (compass_region)", "compass_region"),
             ("🎯 准星区域 (crosshair_region)", "crosshair_region"),
+            ("4x Scope Top Edge (scope_top_edge_4x_region)", "scope_top_edge_4x_region"),
+            ("6x Scope Top Edge (scope_top_edge_6x_region)", "scope_top_edge_6x_region"),
+            ("8x Scope Top Edge (scope_top_edge_8x_region)", "scope_top_edge_8x_region"),
             # === 武器1区域 ===
             ("🔫 武器1 名称区域 (weapon1_name_region)", "weapon1_name_region"),
             ("🔢 武器1 编号区域 (weapon1_number_region)", "weapon1_number_region"),

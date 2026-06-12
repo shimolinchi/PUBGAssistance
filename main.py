@@ -162,7 +162,12 @@ class TacticalHub:
         self.vss_assist = VssAssistant(self.root, self.region_manager, self.minimap, fps=30, config_file=self.config_file)
         self.crossbow_assist = CrossbowAssistant(self.root, self.region_manager, self.minimap, fps=30, config_file=self.config_file)
         self.weapon_detector = WeaponDetector(self.region_manager, fps=30, match_threshold=0.65)
-        self.recoil = RecoilControlModuleNew(config_file=self.config_file)
+        self.recoil = RecoilControlModuleNew(
+            config_file=self.config_file,
+            region_manager=self.region_manager,
+            screen_width=self.sw,
+            screen_height=self.sh
+        )
         self.gesture_id = GestureIdentifier(region_manager=self.region_manager, match_threshold=0.65, fps=30)
         self.equipment_detector = EquipmentDetector(self.region_manager, fps=30, idle_timeout=10.0, on_status_change=self.on_equipment_status)
         self.c4_assistant = C4Assistant(self.root, self.region_manager, self.minimap, fps=30, explosion_margin=2.0, target_speed=50.0,  jump_distance_threshold=20.0)
@@ -300,10 +305,10 @@ class TacticalHub:
             "measure_map": "<f4>",
             "marker_prev": "q",
             "marker_next": "e",
-            "toggle_equipment": "tab"
+            "toggle_equipment": "tab",
+            "fire_key": "end"
         }
         self.load_hotkey_config()
-        self.fire_key_str = self.load_fire_key_config()
         self.migrate_legacy_default_hotkeys()
 
         self.init_ui()
@@ -621,8 +626,8 @@ class TacticalHub:
         # 地图按钮（两列紧凑排列）
         for i, map_name in enumerate(self.map_names):
             short_name = map_name.split()[0]
-            btn = RoundedButton(self.map_tab, 126, 30, 22, short_name,
-                                command=lambda idx=i: self.select_map(idx), is_toggle=True,text_size=self.font_small)
+            btn = RoundedButton(self.map_tab, 126, 30, 30, short_name,
+                                command=lambda idx=i: self.select_map(idx), is_toggle=True,text_size=self.font_large)
             btn.grid(row=i//2, column=i%2, padx=2, pady=3, sticky="ew")
             self.map_buttons.append(btn)
 
@@ -636,7 +641,7 @@ class TacticalHub:
         self.size_buttons = []
         sizes = [("小", "small"), ("中", "medium"), ("大", "large")]
         for i, (name, val) in enumerate(sizes):
-            btn = RoundedButton(size_frame, 81, 30, 22, name,
+            btn = RoundedButton(size_frame, 81, 30, 30, name,
                                 command=lambda idx=i: self.select_size(idx), is_toggle=True, text_size=self.font_small)
             btn.grid(row=0, column=i, padx=3)
             self.size_buttons.append(btn)
@@ -649,7 +654,7 @@ class TacticalHub:
         self.pnt_mode_buttons = {}
         modes = [("无色盲", "normal"), ("绿色盲", "deuteranopia"), ("红色盲", "protanopia"), ("蓝色盲", "tritanopia")]
         for i, (name, mode) in enumerate(modes):
-            btn = RoundedButton(mode_frame, 61, 30, 22, name,
+            btn = RoundedButton(mode_frame, 61, 30, 30, name,
                                 command=lambda m=mode: self.select_pnt_color_mode(m), is_toggle=True, text_size=self.font_status)
             btn.grid(row=0, column=i, padx=2)
             btn.set_active(mode == self.current_pnt_color_mode)
@@ -663,7 +668,7 @@ class TacticalHub:
         self.map_point_group_buttons = {}
         groups = [("载具", "vehicles"), ("飞机", "planes"), ("密室", "rooms"), ("其他", "other")]
         for i, (name, group_key) in enumerate(groups):
-            btn = RoundedButton(group_frame, 61, 30, 22, name,
+            btn = RoundedButton(group_frame, 61, 30, 30, name,
                                 command=lambda g=group_key: self.toggle_map_point_group(g), is_toggle=True, text_size=self.font_status)
             btn.grid(row=0, column=i, padx=2)
             btn.set_active(True)
@@ -673,17 +678,17 @@ class TacticalHub:
         self.select_size(1)
 
     def build_launch_tab(self):
-        self.btn_weapon_detect = RoundedButton(self.launch_tab, 256, 34, 24, "开启武器检测", command=self.toggle_weapon_detection, is_toggle=True, text_size=self.font_large)
+        self.btn_weapon_detect = RoundedButton(self.launch_tab, 256, 34, 30, "开启武器检测", command=self.toggle_weapon_detection, is_toggle=True, text_size=self.font_large)
         self.btn_weapon_detect.pack(pady=3)
-        self.btn_display = RoundedButton(self.launch_tab, 256, 34, 24, "开启瞄准辅助", command=self.toggle_display, is_toggle=True, text_size=self.font_large)
+        self.btn_display = RoundedButton(self.launch_tab, 256, 34, 30, "开启瞄准辅助", command=self.toggle_display, is_toggle=True, text_size=self.font_large)
         self.btn_display.pack(pady=3)
-        self.btn_recoil = RoundedButton(self.launch_tab, 256, 34, 24, "开启辅助压枪", command=self.toggle_recoil, is_toggle=True, text_size=self.font_large)
+        self.btn_recoil = RoundedButton(self.launch_tab, 256, 34, 30, "开启辅助压枪", command=self.toggle_recoil, is_toggle=True, text_size=self.font_large)
         self.btn_recoil.pack(pady=3)
         recoil_config_frame = tk.Frame(self.launch_tab, bg="#DDE6F0")
         recoil_config_frame.pack(pady=3)
-        self.btn_reload_recoil = RoundedButton(recoil_config_frame, 126, 34, 24, "调试特殊武器", command=self.open_special_weapon_debugger, is_toggle=False, text_size=self.font_small)
+        self.btn_reload_recoil = RoundedButton(recoil_config_frame, 126, 34, 30, "调试特殊武器", command=self.open_special_weapon_debugger, is_toggle=False, text_size=self.font_small)
         self.btn_reload_recoil.grid(row=0, column=0, padx=2)
-        self.btn_debug_recoil = RoundedButton(recoil_config_frame, 126, 34, 24, "调试压枪参数", command=self.open_recoil_debugger, is_toggle=False, text_size=self.font_small)
+        self.btn_debug_recoil = RoundedButton(recoil_config_frame, 126, 34, 30, "调试压枪参数", command=self.open_recoil_debugger, is_toggle=False, text_size=self.font_small)
         self.btn_debug_recoil.grid(row=0, column=1, padx=2)
 
         tk.Label(self.launch_tab, text="--启用特殊武器助手--", bg="#DDE6F0", fg="#6B7280", font=("Microsoft YaHei", self.font_status, "bold")).pack(pady=4)
@@ -700,85 +705,75 @@ class TacticalHub:
         frame = tk.Frame(self.launch_tab, bg="#DDE6F0")
         frame.pack(pady=2) 
         for i, (name, key) in enumerate(assistants):
-            btn = RoundedButton(frame, 126, 29, 21, name, command=lambda k=key: self.toggle_assistant(k), is_toggle=True, text_size=self.font_small)
+            btn = RoundedButton(frame, 126, 29, 30, name, command=lambda k=key: self.toggle_assistant(k), is_toggle=True, text_size=self.font_small)
             btn.grid(row=i//2, column=i%2, padx=2, pady=3)
             self.assistant_btns[key] = btn
 
 
     def build_calib_tab(self):
-        
-        self.calib_tab.columnconfigure(0, weight=1, uniform="calib")
-        self.calib_tab.columnconfigure(1, weight=1, uniform="calib")
-        self.btn_debug = RoundedButton(self.calib_tab, 126, 26, 19, "显示所有区域框", command=self.toggle_debug, is_toggle=True, text_size=self.font_small)
-        self.btn_debug.grid(row=0, column=0, padx=2, pady=2, sticky="ew")
-        self.btn_auto_scale = RoundedButton(self.calib_tab, 126, 26, 19, "调试缩放比例", command=self.open_auto_scale_calibrator, is_toggle=False, text_size=self.font_small)
-        self.btn_auto_scale.grid(row=0, column=1, padx=2, pady=2, sticky="ew")
+        for col in range(3):
+            self.calib_tab.columnconfigure(col, weight=1, uniform="calib")
 
-        # 原有六个区域按钮列表（名称和区域键）
-        existing_items = [
-            ("小地图", "minimap_region"),
-            ("大地图", "largemap_region"),
-            ("垂直测高", "elevation_region"),
-            # ("准星区域", "crosshair_region"),
-            ("武器栏", "weapon_region"),
-            ("1km长度", "largemap_1km_px"),
-            ("姿势区域", "stance_region")   
+        top_frame = tk.Frame(self.calib_tab, bg="#DDE6F0")
+        top_frame.grid(row=0, column=0, columnspan=3, pady=(0, 3))
+        self.btn_debug = RoundedButton(top_frame, 125, 36, 30, "显示所有区域框",
+                                       command=self.toggle_debug, is_toggle=True, text_size=self.font_large)
+        self.btn_debug.grid(row=0, column=0, padx=3)
+        self.btn_auto_scale = RoundedButton(top_frame, 125, 36, 30, "调试缩放比例",
+                                            command=self.open_auto_scale_calibrator, is_toggle=False,
+                                            text_size=self.font_large)
+        self.btn_auto_scale.grid(row=0, column=1, padx=3)
+
+        calib_rows = [
+            [
+                ("大地图", "region", "largemap_region"),
+                ("小地图", "region", "minimap_region"),
+                ("1km比例尺", "scale", "largemap_1km_px"),
+            ],
+            [
+                ("武器1编号", "region", "weapon1_number_region"),
+                ("武器2编号", "region", "weapon2_number_region"),
+                ("垂直测高", "region", "elevation_region"),
+            ],
+            [
+                ("武器1名称", "region", "weapon1_name_region"),
+                ("武器2名称", "region", "weapon2_name_region"),
+                ("武器图标", "region", "weapon_region"),
+            ],
+            [
+                ("武器1倍镜", "region", "weapon1_scope_region"),
+                ("武器2倍镜", "region", "weapon2_scope_region"),
+                ("姿势区域", "region", "stance_region"),
+            ],
+            [
+                ("武器1枪口", "region", "weapon1_muzzle_region"),
+                ("武器2枪口", "region", "weapon2_muzzle_region"),
+                ("四倍镜内边", "region", "scope_top_edge_4x_region"),
+            ],
+            [
+                ("武器1握把", "region", "weapon1_grip_region"),
+                ("武器2握把", "region", "weapon2_grip_region"),
+                ("六倍镜内边", "region", "scope_top_edge_6x_region"),
+            ],
+            [
+                ("武器1枪托", "region", "weapon1_stock_region"),
+                ("武器2枪托", "region", "weapon2_stock_region"),
+                ("八倍镜内边", "region", "scope_top_edge_8x_region"),
+            ],
         ]
 
-        row = 1
-        for i in range(0, len(existing_items), 2):
-            # 左列按钮
-            name1, key1 = existing_items[i]
-            if key1 == "largemap_1km_px":
-                btn1 = RoundedButton(self.calib_tab, 126, 26, 19, f"校准{name1}",
-                                    command=lambda: self.region_manager.calibrate_scale("largemap_1km_px"), text_size=self.font_small)
+        def run_calibration(kind, key):
+            if kind == "scale":
+                self.region_manager.calibrate_scale(key)
             else:
-                btn1 = RoundedButton(self.calib_tab, 126, 26, 19, f"校准{name1}",
-                                    command=lambda k=key1: self.region_manager.calibrate_region(k), text_size=self.font_small)
-            btn1.grid(row=row, column=0, padx=2, pady=2, sticky="ew")
+                self.region_manager.calibrate_region(key)
 
-            # 右列按钮
-            if i+1 < len(existing_items):
-                name2, key2 = existing_items[i+1]
-                if key2 == "largemap_1km_px":
-                    btn2 = RoundedButton(self.calib_tab, 126, 26, 19, f"校准{name2}",
-                                        command=lambda: self.region_manager.calibrate_scale("largemap_1km_px"), text_size=self.font_small)
-                else:
-                    btn2 = RoundedButton(self.calib_tab, 126, 26, 19, f"校准{name2}",
-                                        command=lambda k=key2: self.region_manager.calibrate_region(k), text_size=self.font_small)
-                btn2.grid(row=row, column=1, padx=2, pady=2, sticky="ew")
-            row += 1
-
-        # 武器1 和 武器2 的项（每个武器6项）
-        weapon1_items = [
-            ("武器1编号", "weapon1_number_region"),
-            ("武器1名称", "weapon1_name_region"),
-            ("武器1倍镜", "weapon1_scope_region"),
-            ("武器1握把", "weapon1_grip_region"),
-            ("武器1枪口", "weapon1_muzzle_region"),
-            ("武器1枪托", "weapon1_stock_region"),
-        ]
-        weapon2_items = [
-            ("武器2编号", "weapon2_number_region"),
-            ("武器2名称", "weapon2_name_region"),
-            ("武器2倍镜", "weapon2_scope_region"),
-            ("武器2握把", "weapon2_grip_region"),
-            ("武器2枪口", "weapon2_muzzle_region"),
-            ("武器2枪托", "weapon2_stock_region"),
-        ]
-
-        for i in range(6):
-            # 武器1按钮
-            name1, key1 = weapon1_items[i]
-            btn1 = RoundedButton(self.calib_tab, 128, 26, 19, f"校准{name1}",
-                                command=lambda k=key1: self.region_manager.calibrate_region(k), text_size=self.font_small)
-            btn1.grid(row=row, column=0, padx=2, pady=2, sticky="ew")
-            # 武器2按钮
-            name2, key2 = weapon2_items[i]
-            btn2 = RoundedButton(self.calib_tab, 128, 26, 19, f"校准{name2}",
-                                command=lambda k=key2: self.region_manager.calibrate_region(k), text_size=self.font_small)
-            btn2.grid(row=row, column=1, padx=2, pady=2, sticky="ew")
-            row += 1
+        for row_index, row_items in enumerate(calib_rows, start=1):
+            for col_index, (name, kind, key) in enumerate(row_items):
+                btn = RoundedButton(self.calib_tab, 82, 33, 30, name,
+                                    command=lambda k=kind, v=key: run_calibration(k, v),
+                                    text_size=self.font_status)
+                btn.grid(row=row_index, column=col_index, padx=2, pady=2)
             
     def build_key_tab(self):
         self.key_frame = tk.Frame(self.key_tab, bg="#DDE6F0")
@@ -813,14 +808,14 @@ class TacticalHub:
                 prev_label = tk.Label(left_frame, text=self.format_hotkey(self.hotkeys["marker_prev"]), bg="#DDE6F0", fg="#2563EB", font=("Consolas", self.font_status, "bold"))
                 prev_label.pack(side=tk.LEFT, padx=(6, 0))
                 self.key_labels["marker_prev"] = prev_label
-                prev_record = RoundedButton(left_frame, 44, 26, 19, "录制",
+                prev_record = RoundedButton(left_frame, 44, 26, 30, "录制",
                                             command=lambda lbl=prev_label: self.capture_hotkey("marker_prev", lbl),
                                             is_toggle=False, text_size=self.font_small)
                 prev_record.pack(side=tk.LEFT, padx=(5, 7))
                 next_label = tk.Label(left_frame, text=self.format_hotkey(self.hotkeys["marker_next"]), bg="#DDE6F0", fg="#2563EB", font=("Consolas", self.font_status, "bold"))
                 next_label.pack(side=tk.LEFT, padx=(0, 0))
                 self.key_labels["marker_next"] = next_label
-                record_btn = RoundedButton(func_frame, 50, 26, 19, "录制",
+                record_btn = RoundedButton(func_frame, 50, 26, 30, "录制",
                                         command=lambda lbl=next_label: self.capture_hotkey("marker_next", lbl),
                                         is_toggle=False, text_size=self.font_small)
                 record_btn.pack(side="right", padx=4)
@@ -828,7 +823,7 @@ class TacticalHub:
 
             # 快捷键显示
             if action == "fire_key":
-                current_key = self.format_hotkey(self.fire_key_str)
+                current_key = self.format_hotkey(self.hotkeys["fire_key"])
             else:
                 current_key = self.format_hotkey(self.hotkeys[action]) if editable else "鼠标左键 + 中键"
             key_label = tk.Label(left_frame, text=current_key, bg="#DDE6F0", fg="#2563EB", font=("Consolas", self.font_status, "bold"))
@@ -838,7 +833,7 @@ class TacticalHub:
 
             # 右侧：录制按钮
             if editable:
-                record_btn = RoundedButton(func_frame, 50, 26, 19, "录制", 
+                record_btn = RoundedButton(func_frame, 50, 26, 30, "录制", 
                                         command=lambda a=action, lbl=key_label: self.capture_hotkey(a, lbl), 
                                         is_toggle=False, text_size=self.font_small)
                 record_btn.pack(side="right", padx=4)
@@ -846,10 +841,10 @@ class TacticalHub:
         # 保存快捷键按钮
         btn_frame = tk.Frame(self.key_frame, bg="#DDE6F0")
         btn_frame.pack(side=tk.BOTTOM, pady=(2, 2))
-        save_btn = RoundedButton(btn_frame, 126, 28, 20, "保存快捷键", 
+        save_btn = RoundedButton(btn_frame, 126, 28, 30, "保存快捷键", 
                                 command=self.save_hotkey_config, is_toggle=False, text_size=self.font_small)
         save_btn.pack(side=tk.LEFT, padx=2)
-        default_btn = RoundedButton(btn_frame, 126, 28, 20, "恢复默认", 
+        default_btn = RoundedButton(btn_frame, 126, 28, 30, "恢复默认", 
                                     command=self.reset_default_hotkeys, is_toggle=False, text_size=self.font_small)
         default_btn.pack(side=tk.LEFT, padx=2)
     
@@ -1010,18 +1005,18 @@ class TacticalHub:
             if action_key in ("throw", "toggle_equipment", "fire_key") and modifiers:
                 # 手雷瞬爆、打开装备栏和开火按键只允许单键，不允许带修饰键
                 key_label.config(text="仅允许单键")
-                old_value = self.fire_key_str if action_key == "fire_key" else self.hotkeys[action_key]
+                old_value = self.hotkeys[action_key]
                 self.root.after(1000, lambda: key_label.config(text=self.format_hotkey(old_value)))
                 self._is_capturing = False
                 self.restart_listeners()
                 return
 
             if action_key == "fire_key":
-                self.fire_key_str = main_key[1:-1] if main_key.startswith("<") and main_key.endswith(">") else main_key
+                self.hotkeys["fire_key"] = main_key[1:-1] if main_key.startswith("<") and main_key.endswith(">") else main_key
             else:
                 self.hotkeys[action_key] = combo_str
             self._is_capturing = False
-            key_label.config(text=self.format_hotkey(self.fire_key_str if action_key == "fire_key" else combo_str))
+            key_label.config(text=self.format_hotkey(self.hotkeys[action_key]))
             self.root.after(100, self.restart_listeners)
 
         self.temp_listener = keyboard.Listener(on_press=on_press)
@@ -1030,10 +1025,15 @@ class TacticalHub:
     def load_hotkey_config(self):
         if os.path.exists(self.config_file):
             try:
-                with open(self.config_file, 'r') as f:
+                with open(self.config_file, 'r', encoding='utf-8') as f:
                     data = json.load(f)
-                    if "hotkeys" in data:
-                        self.hotkeys.update(data["hotkeys"])
+                    saved_hotkeys = data.get("hotkeys", {})
+                    if saved_hotkeys:
+                        self.hotkeys.update(saved_hotkeys)
+                    if "fire_key" not in saved_hotkeys:
+                        fire_key = data.get("recoil_settings", {}).get("fire_key")
+                        if fire_key:
+                            self.hotkeys["fire_key"] = self._normalize_fire_key(fire_key)
             except: pass
 
     def migrate_legacy_default_hotkeys(self):
@@ -1064,8 +1064,10 @@ class TacticalHub:
                 try: data = json.load(f)
                 except: pass
         data["hotkeys"] = self.hotkeys
-        with open(self.config_file, 'w') as f:
-            json.dump(data, f, indent=4)
+        if "recoil_settings" in data:
+            data["recoil_settings"].pop("fire_key", None)
+        with open(self.config_file, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=4, ensure_ascii=False)
 
     def toggle_weapon_detection(self):
         self.weapon_detection_enabled = not self.weapon_detection_enabled
@@ -1416,7 +1418,8 @@ class TacticalHub:
                 print(f"已备份至 {backup}")
                 data = {}
         data["hotkeys"] = self.hotkeys
-        data.setdefault("recoil_settings", {})["fire_key"] = self.fire_key_str
+        if "recoil_settings" in data:
+            data["recoil_settings"].pop("fire_key", None)
         # 写回文件
         with open(self.config_file, 'w', encoding='utf-8') as f:
             json.dump(data, f, indent=4, ensure_ascii=False)
@@ -1425,44 +1428,52 @@ class TacticalHub:
     
     def reset_default_hotkeys(self):
         self.hotkeys = {
-            "throw": "v",
+            "throw": "b",
             "toggle_weapon_detection": "<f1>",
             "toggle_display": "<f2>",
             "toggle_recoil": "<f3>",
             "measure_map": "<f4>",
             "marker_prev": "q",
             "marker_next": "e",
-            "toggle_equipment": "tab"
+            "toggle_equipment": "tab",
+            "fire_key": "end"
         }
-        self.fire_key_str = "end"
         self.save_hotkey_config()
         self.restart_listeners()
         # 刷新UI中的快捷键显示
         for action, label in self.key_labels.items():
-            if action == "fire_key":
-                label.config(text=self.format_hotkey(self.fire_key_str))
-            else:
-                label.config(text=self.format_hotkey(self.hotkeys[action]))
+            label.config(text=self.format_hotkey(self.hotkeys[action]))
 
     def load_hotkey_config(self):
         if os.path.exists(self.config_file):
             try:
-                with open(self.config_file, 'r') as f:
+                with open(self.config_file, 'r', encoding='utf-8') as f:
                     data = json.load(f)
-                    if "hotkeys" in data:
-                        self.hotkeys.update(data["hotkeys"])
+                    saved_hotkeys = data.get("hotkeys", {})
+                    if saved_hotkeys:
+                        self.hotkeys.update(saved_hotkeys)
+                    if "fire_key" not in saved_hotkeys:
+                        fire_key = data.get("recoil_settings", {}).get("fire_key")
+                        if fire_key:
+                            self.hotkeys["fire_key"] = self._normalize_fire_key(fire_key)
             except:
                 pass
+
+    def _normalize_fire_key(self, key):
+        fire_key = str(key).strip().lower()
+        if fire_key.startswith("<") and fire_key.endswith(">"):
+            fire_key = fire_key[1:-1]
+        return fire_key or "end"
 
     def load_fire_key_config(self):
         if os.path.exists(self.config_file):
             try:
                 with open(self.config_file, 'r', encoding='utf-8') as f:
                     data = json.load(f)
-                fire_key = str(data.get("recoil_settings", {}).get("fire_key", "end")).strip().lower()
-                if fire_key.startswith("<") and fire_key.endswith(">"):
-                    fire_key = fire_key[1:-1]
-                return fire_key
+                return self._normalize_fire_key(data.get("hotkeys", {}).get(
+                    "fire_key",
+                    data.get("recoil_settings", {}).get("fire_key", "end")
+                ))
             except Exception:
                 pass
         return "end"

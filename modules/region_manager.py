@@ -30,6 +30,7 @@ class RegionManager:
 
         self._load_config()
         self._sync_crosshair_region()
+        self._sync_scope_top_edge_regions()
 
         # 调试覆盖层
         self.debug_overlay = None
@@ -55,7 +56,7 @@ class RegionManager:
 
     def _sync_crosshair_region(self):
         """根据当前真实分辨率自动生成准星区域并同步到配置文件。"""
-        side = int(round(self.real_h / 1.5))
+        side = int(round(self.real_h / 1.4))
         side = max(1, min(side, self.real_w, self.real_h))
         left = int(round((self.real_w - side) / 2))
         top = int(round((self.real_h - side) / 2))
@@ -67,6 +68,29 @@ class RegionManager:
         }
         self._save_config()
         print(f"[全局管理] 自动同步 crosshair_region: {self.real_regions['crosshair_region']}")
+
+    def _sync_scope_top_edge_regions(self):
+        """Create default narrow strips used to track 4x/6x/8x scope top inner edges."""
+        old_region = self.real_regions.pop("scope_top_edge_region", None)
+        crosshair = self.real_regions.get("crosshair_region")
+        if not crosshair:
+            return
+        width = max(24, int(round(crosshair["width"] * 0.06)))
+        height = max(80, int(round(crosshair["height"] * 0.35)))
+        center_x = crosshair["left"] + crosshair["width"] // 2
+        left = int(round(center_x - width / 2))
+        top = int(crosshair["top"])
+        default_region = {
+            "left": max(0, min(left, self.real_w - width)),
+            "top": max(0, min(top, self.real_h - height)),
+            "width": min(width, self.real_w),
+            "height": min(height, self.real_h)
+        }
+        base_region = old_region or default_region
+        for region_name in ["scope_top_edge_4x_region", "scope_top_edge_6x_region", "scope_top_edge_8x_region"]:
+            self.real_regions.setdefault(region_name, dict(base_region))
+        self._save_config()
+        print("[RegionManager] synced scope top edge regions")
 
     def _save_config(self):
         """保存当前实际分辨率下的区域和比例尺"""
@@ -128,7 +152,10 @@ class RegionManager:
         color_map = {
             "scope_region": "#34495E", "weapon_region": "#E74C3C", "stance_region": "#2ECC71",
             "minimap_region": "#3498DB", "largemap_region": "#9B59B6", "elevation_region": "#E67E22",
-            "compass_region": "#F1C40F", "crosshair_region": "#FF69B4"
+            "compass_region": "#F1C40F", "crosshair_region": "#FF69B4",
+            "scope_top_edge_4x_region": "#00D1B2",
+            "scope_top_edge_6x_region": "#1ABC9C",
+            "scope_top_edge_8x_region": "#16A085"
         }
 
         for name, rect in self.real_regions.items():

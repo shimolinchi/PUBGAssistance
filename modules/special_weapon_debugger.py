@@ -53,7 +53,10 @@ class SpecialWeaponDebugger:
         self.root.geometry("840x500")
         self.root.minsize(800, 470)
         self.root.configure(bg="#F3F6FA")
-        self.root.attributes("-topmost", True)
+        try:
+            self.root.attributes("-topmost", False)
+        except Exception:
+            pass
 
         self._load_config()
         self._build_ui()
@@ -81,8 +84,7 @@ class SpecialWeaponDebugger:
         controls = self._card(left, "操作")
         row1 = tk.Frame(controls, bg="#FFFFFF")
         row1.pack(fill=tk.X, padx=8, pady=(8, 5))
-        RoundedButton(row1, "保存", self.save, width=80, height=28, bg="#2563EB").pack(side=tk.LEFT, padx=(0, 6))
-        RoundedButton(row1, "重载", self.reload, width=80, height=28, bg="#7C3AED").pack(side=tk.LEFT)
+        RoundedButton(row1, "保存并应用", self.save, width=166, height=28, bg="#2563EB").pack(side=tk.LEFT)
         row2 = tk.Frame(controls, bg="#FFFFFF")
         row2.pack(fill=tk.X, padx=8, pady=(0, 7))
         RoundedButton(row2, "添加标点", self.add_point, width=166, height=28, bg="#0EA5E9").pack(side=tk.LEFT)
@@ -438,14 +440,10 @@ class SpecialWeaponDebugger:
         self._sort_all_curves()
         with open(self.config_file, "w", encoding="utf-8") as f:
             json.dump(self.config, f, indent=4, ensure_ascii=False)
-        self._apply_to_modules()
-        self.status_var.set("参数已保存并应用。")
-
-    def reload(self):
         self._load_config()
-        self._render_current_weapon()
         self._apply_to_modules()
-        self.status_var.set("已从 config.json 重载。")
+        self._render_current_weapon()
+        self.status_var.set("参数已保存、重载并应用。")
 
     def on_closing(self):
         self.root.destroy()
@@ -453,5 +451,13 @@ class SpecialWeaponDebugger:
 
 def open_special_weapon_debugger(parent, config_file="config.json", modules=None):
     window = tk.Toplevel(parent) if parent else tk.Tk()
+    if parent:
+        window.transient(parent)
     app = SpecialWeaponDebugger(window, config_file=config_file, modules=modules)
+    try:
+        window.grab_release()
+        window.lift()
+        window.focus_force()
+    except Exception:
+        pass
     return app

@@ -62,7 +62,10 @@ class RecoilDebuggerWindow:
         self.root.geometry("800x630")
         self.root.minsize(760, 550)
         self.root.configure(bg="#FFFFFF")
-        self.root.attributes("-topmost", True)
+        try:
+            self.root.attributes("-topmost", False)
+        except Exception:
+            pass
 
         self.weapon_var = tk.StringVar()
         self.scope_var = tk.StringVar(value="无")
@@ -107,8 +110,7 @@ class RecoilDebuggerWindow:
         controls = self._card(left, "2. 调试控制")
         button_row1 = tk.Frame(controls, bg="#FFFFFF")
         button_row1.pack(fill=tk.X, padx=10, pady=(9, 6))
-        RoundedButton(button_row1, "保存参数", self.save_params, width=100, height=30, bg="#2563EB").pack(side=tk.LEFT, padx=(0, 8))
-        RoundedButton(button_row1, "重载参数", self.reload_params, width=100, height=30, bg="#7C3AED").pack(side=tk.LEFT)
+        RoundedButton(button_row1, "保存并应用", self.save_params, width=208, height=30, bg="#2563EB").pack(side=tk.LEFT)
 
         hint = tk.Label(
             controls,
@@ -230,16 +232,32 @@ class RecoilDebuggerWindow:
         self.status_var.set(text)
 
     def save_params(self):
+        selected = {
+            "weapon": self.weapon_var.get(),
+            "scope": self.scope_var.get(),
+            "grip": self.grip_var.get(),
+            "muzzle": self.muzzle_var.get(),
+            "stock": self.stock_var.get(),
+            "node_curve": self.node_curve_var.get(),
+        }
         self._sync_public_multipliers()
         self.recoil.save_config()
-        self._set_status("参数已保存到 config.json。")
-
-    def reload_params(self):
         self.recoil.reload_config()
         self._load_options()
+        if selected["weapon"] in self.recoil.weapon_configs:
+            self.weapon_var.set(selected["weapon"])
+        for name, combo, var in [
+            ("scope", self.scope_combo, self.scope_var),
+            ("grip", self.grip_combo, self.grip_var),
+            ("muzzle", self.muzzle_combo, self.muzzle_var),
+            ("stock", self.stock_combo, self.stock_var),
+        ]:
+            if selected[name] in combo.cget("values"):
+                var.set(selected[name])
+        self.node_curve_var.set(selected["node_curve"])
         self._apply_selection()
         self._draw_chart()
-        self._set_status("已从 config.json 重载参数。")
+        self._set_status("参数已保存、重载并应用。")
 
     def add_curve_point(self):
         curve = self._editable_curve(self._node_curve_key())
@@ -455,5 +473,13 @@ class RecoilDebuggerWindow:
 
 def open_recoil_debugger(parent, recoil_module, on_recoil_toggle=None):
     window = tk.Toplevel(parent) if parent else tk.Tk()
+    if parent:
+        window.transient(parent)
     app = RecoilDebuggerWindow(window, recoil_module, on_recoil_toggle=on_recoil_toggle)
+    try:
+        window.grab_release()
+        window.lift()
+        window.focus_force()
+    except Exception:
+        pass
     return app

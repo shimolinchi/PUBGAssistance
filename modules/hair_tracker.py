@@ -61,6 +61,54 @@ class HairTracker:
     def get_dynamic_center(self):
         return self.cx, self.cy, self.is_found
 
+    def detect_once(self, sct=None):
+        owns_sct = sct is None
+        if owns_sct:
+            sct = mss.mss()
+        try:
+            screenshot = sct.grab(self.monitor)
+            cx, cy, found, _thresh, _circle = self._detect_from_frame(np.asarray(screenshot))
+            return cx, cy, found
+        finally:
+            if owns_sct:
+                try:
+                    sct.close()
+                except Exception:
+                    pass
+
+    def _detect_from_frame(self, frame):
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGRA2GRAY)
+        _, thresh = cv2.threshold(gray, 25, 255, cv2.THRESH_BINARY)
+        thresh = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, self.open_kernel)
+        thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, self.close_kernel)
+
+        contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        best_circle = None
+        found = False
+        cx, cy = self.cx, self.cy
+
+        if contours:
+            largest_c = max(contours, key=cv2.contourArea)
+            area = cv2.contourArea(largest_c)
+            roi_area = self.monitor["width"] * self.monitor["height"]
+
+            if roi_area * 0.08 < area < roi_area * 0.85:
+                (x, y), radius = cv2.minEnclosingCircle(largest_c)
+                circle_area = np.pi * (radius ** 2)
+
+                if circle_area > 0:
+                    fit_ratio = area / circle_area
+                    if fit_ratio > 0.7:
+                        cx = self.monitor["left"] + int(x)
+                        cy = self.monitor["top"] + int(y)
+                        found = True
+                        best_circle = (int(x), int(y), int(radius))
+
+        self.cx = cx
+        self.cy = cy
+        self.is_found = found
+        return cx, cy, found, thresh, best_circle
+
     def _tracking_loop(self):
         debug_win_name = "Crossbow/VSS Vision Debug"
         

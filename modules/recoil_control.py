@@ -5,12 +5,27 @@ import threading
 import json
 import os
 from pynput import mouse, keyboard
+try:
+    import mss
+except Exception:
+    mss = None
+
+try:
+    from modules.scope_motion_tracker import ScopeMotionTracker
+except Exception:
+    try:
+        from scope_motion_tracker import ScopeMotionTracker
+    except Exception:
+        ScopeMotionTracker = None
 
 MOUSEEVENTF_MOVE = 0x0001
 
 class RecoilControlModule:
-    def __init__(self, config_file="config.json"):
+    def __init__(self, config_file="config.json", region_manager=None, screen_width=None, screen_height=None):
         self.config_file = config_file
+        self.region_manager = region_manager
+        self.sw = screen_width or ctypes.windll.user32.GetSystemMetrics(0)
+        self.sh = screen_height or ctypes.windll.user32.GetSystemMetrics(1)
 
         # 核心状态
         self.is_enabled = False
@@ -25,6 +40,17 @@ class RecoilControlModule:
         self.recoil_curve = []
         self.recoil_curve_step = 0.4
         self.auto_fire_enabled = False
+        self.sr_scope_delay = 0.6
+        self.sr_track_interval = 0.005
+        self.sr_move_scale = 1.0
+        self.sr_max_step = 12
+        self.sr_miss_limit = 3
+        self.sr_min_confidence = 0.25
+        self.sr_invert_y = True
+        self.sr_tracker_config = {}
+        self.sr_probe_seconds = 2.0
+        self.sr_scope_lost_seconds = 2.0
+        self.sr_scope_confirm_frames = 3
 
         # 配件/姿势系数
         self.total_multiplier = 1.0
@@ -52,6 +78,15 @@ class RecoilControlModule:
         self.current_recoil_strength = 0
         self.is_firing = False
         self.fire_start_time = 0
+        self.sr_breath_enabled = False
+        self.sr_scope_ready_time = 0.0
+        self.sr_tracker = None
+        self.sr_miss_count = 0
+        self.sr_probe_until = 0.0
+        self.sr_scope_active = False
+        self.sr_edge_hit_streak = 0
+        self.sr_last_confirmed_edge_time = 0.0
+        self.sr_tracker_region_name = None
         self._thread_running = True
         self.kb = keyboard.Controller()
 
@@ -67,14 +102,29 @@ class RecoilControlModule:
                     with open(self.config_file, 'r', encoding='utf-8') as f:
                         config = json.load(f)
                         rc = config.get("recoil_settings", {})
+                        hotkeys = config.get("hotkeys", {})
                         if not rc:
+                            self.fire_key_str = hotkeys.get("fire_key", "end")
+                            self._parse_fire_key(self.fire_key_str)
                             self._init_default_config()
                             return
 
-                        self.fire_key_str = rc.get("fire_key", "end")
+                        self.fire_key_str = hotkeys.get("fire_key", rc.get("fire_key", "end"))
                         self._parse_fire_key(self.fire_key_str)
                         self.recoil_delay = rc.get("recoil_delay", 0.02)
                         self.recoil_curve_step = rc.get("recoil_curve_step", 0.4)
+                        sr_cfg = rc.get("sr_breath_control", {})
+                        self.sr_scope_delay = float(sr_cfg.get("scope_delay", self.sr_scope_delay))
+                        self.sr_track_interval = float(sr_cfg.get("track_interval", self.sr_track_interval))
+                        self.sr_move_scale = float(sr_cfg.get("move_scale", self.sr_move_scale))
+                        self.sr_max_step = int(sr_cfg.get("max_step", self.sr_max_step))
+                        self.sr_miss_limit = int(sr_cfg.get("miss_limit", self.sr_miss_limit))
+                        self.sr_min_confidence = float(sr_cfg.get("min_confidence", self.sr_min_confidence))
+                        self.sr_invert_y = bool(sr_cfg.get("invert_y", self.sr_invert_y))
+                        self.sr_probe_seconds = float(sr_cfg.get("probe_seconds", self.sr_probe_seconds))
+                        self.sr_scope_lost_seconds = float(sr_cfg.get("scope_lost_seconds", self.sr_scope_lost_seconds))
+                        self.sr_scope_confirm_frames = int(sr_cfg.get("scope_confirm_frames", self.sr_scope_confirm_frames))
+                        self.sr_tracker_config = sr_cfg.get("edge_tracker", {})
                         self.weapon_configs = rc.get("weapons", {})
                         # 读取姿势系数（嵌套字典）
                         self.stance_multipliers = rc.get("stance_multipliers", {})
@@ -200,6 +250,8 @@ class RecoilControlModule:
         key_str = str(key_str).strip().lower()
         if key_str.startswith("<") and key_str.endswith(">"):
             key_str = key_str[1:-1]
+        self.fire_key_str = key_str or "end"
+        key_str = self.fire_key_str
         if hasattr(keyboard.Key, key_str):
             self.fire_key = getattr(keyboard.Key, key_str)
         else:
@@ -211,6 +263,7 @@ class RecoilControlModule:
         if not enabled:
             self.is_firing = False
             self.fire_start_time = 0
+            self._stop_sr_breath_control()
             try:
                 self.kb.release(self.fire_key)
             except Exception:
@@ -225,10 +278,23 @@ class RecoilControlModule:
             except Exception:
                 config = {}
 
+        config.setdefault("hotkeys", {})["fire_key"] = self.fire_key_str
         config["recoil_settings"] = {
-            "fire_key": self.fire_key_str,
             "recoil_delay": self.recoil_delay,
             "recoil_curve_step": self.recoil_curve_step,
+            "sr_breath_control": {
+                "scope_delay": self.sr_scope_delay,
+                "track_interval": self.sr_track_interval,
+                "move_scale": self.sr_move_scale,
+                "max_step": self.sr_max_step,
+                "miss_limit": self.sr_miss_limit,
+                "min_confidence": self.sr_min_confidence,
+                "invert_y": self.sr_invert_y,
+                "probe_seconds": self.sr_probe_seconds,
+                "scope_lost_seconds": self.sr_scope_lost_seconds,
+                "scope_confirm_frames": self.sr_scope_confirm_frames,
+                "edge_tracker": self.sr_tracker_config,
+            },
             "weapons": self.weapon_configs,
             "stance_multipliers": self.stance_multipliers,
             "scope_multipliers": self.scope_multiplier_curves,
@@ -245,13 +311,14 @@ class RecoilControlModule:
             return
         self.is_firing = False
         self.fire_start_time = 0
+        self._stop_sr_breath_control()
         self.kb.release(self.fire_key)
         self.current_weapon = weapon_name
         wp_data = self.weapon_configs.get(weapon_name, {})
-        self.recoil_curve = self._normalize_curve(wp_data.get("recoil_curve", wp_data.get("base", 0.0)), 0.0)
+        self.weapon_type = wp_data.get("type", "ar")
+        self.recoil_curve = [] if self.weapon_type == "sr" else self._normalize_curve(wp_data.get("recoil_curve", wp_data.get("base", 0.0)), 0.0)
         self.base_recoil = self.recoil_curve[0] if self.recoil_curve else 0.0
         self.auto_fire_enabled = wp_data.get("auto_fire", False)
-        self.weapon_type = wp_data.get("type", "ar")
 
         self.current_stance_multipliers = self.stance_multipliers.get(self.weapon_type,
                                                                       {"stand": 1.0, "squat": 0.8, "lie": 0.6})
@@ -283,6 +350,10 @@ class RecoilControlModule:
 
     # ================= 事件处理 =================
     def _on_mouse_click(self, x, y, button, pressed):
+        if button == mouse.Button.right and pressed:
+            self._toggle_sr_breath_control()
+            return
+
         if button != mouse.Button.left:
             return
         # 无论压枪是否开启，左键按下/释放必须同步 fire_key
@@ -298,6 +369,9 @@ class RecoilControlModule:
 
         # 以下仅处理压枪位移（仅在压枪开关开启且有武器时）
         if not self.is_enabled or not self.current_weapon:
+            return
+
+        if self.weapon_type == "sr":
             return
 
         if self.weapon_type == "dmr":
@@ -317,8 +391,121 @@ class RecoilControlModule:
         """通过 Windows API 实时获取鼠标左键物理状态"""
         return bool(ctypes.windll.user32.GetAsyncKeyState(0x01) & 0x8000)
 
+    def _toggle_sr_breath_control(self):
+        if not self.is_enabled or self.weapon_type != "sr" or not self.current_weapon:
+            self._stop_sr_breath_control()
+            return
+        now = time.perf_counter()
+        self.sr_breath_enabled = True
+        self.sr_scope_ready_time = now + max(0.0, self.sr_scope_delay)
+        self.sr_probe_until = self.sr_scope_ready_time + max(0.1, self.sr_probe_seconds)
+        self.sr_miss_count = 0
+        self.sr_edge_hit_streak = 0
+        self.sr_scope_active = False
+        self.sr_last_confirmed_edge_time = 0.0
+        tracker = self._ensure_sr_tracker()
+        if tracker is not None:
+            tracker.reset()
+
+    def _stop_sr_breath_control(self):
+        self.sr_breath_enabled = False
+        self.sr_scope_ready_time = 0.0
+        self.sr_miss_count = 0
+        self.sr_probe_until = 0.0
+        self.sr_scope_active = False
+        self.sr_edge_hit_streak = 0
+        self.sr_last_confirmed_edge_time = 0.0
+        if self.sr_tracker is not None:
+            self.sr_tracker.reset()
+
+    def _scope_top_edge_region_name(self):
+        scope_key = str(self.scope or "").lower()
+        if scope_key in ("4", "4x", "x4"):
+            return "scope_top_edge_4x_region"
+        if scope_key in ("6", "6x", "x6"):
+            return "scope_top_edge_6x_region"
+        if scope_key in ("8", "8x", "x8"):
+            return "scope_top_edge_8x_region"
+        return "scope_top_edge_4x_region"
+
+    def _ensure_sr_tracker(self):
+        region_name = self._scope_top_edge_region_name()
+        if self.sr_tracker is not None:
+            if region_name != self.sr_tracker_region_name:
+                self.sr_tracker.set_region_name(region_name)
+                self.sr_tracker_region_name = region_name
+            return self.sr_tracker
+        if ScopeMotionTracker is None or self.region_manager is None:
+            return None
+        cfg = {
+            "min_gradient": 0.12,
+            "min_bright_ratio": 0.35,
+            "max_edge_jump": max(20.0, float(self.sr_max_step) * 4.0),
+        }
+        cfg.update(getattr(self, "sr_tracker_config", {}))
+        self.sr_tracker_region_name = region_name
+        self.sr_tracker = ScopeMotionTracker(self.sw, self.sh, self.region_manager, cfg, self.sr_tracker_region_name)
+        return self.sr_tracker
+
+    def _apply_sr_breath_control(self, sct):
+        if not self.sr_breath_enabled:
+            return
+        if not self.is_enabled or self.weapon_type != "sr" or not self.current_weapon:
+            self._stop_sr_breath_control()
+            return
+        now = time.perf_counter()
+        if now < self.sr_scope_ready_time:
+            return
+
+        tracker = self._ensure_sr_tracker()
+        if tracker is None:
+            self._stop_sr_breath_control()
+            return
+
+        dy, confidence, found = tracker.detect_motion(sct)
+        if not found or confidence < self.sr_min_confidence:
+            self.sr_miss_count += 1
+            self.sr_edge_hit_streak = 0
+            if not self.sr_scope_active and now > self.sr_probe_until:
+                self._stop_sr_breath_control()
+            elif self.sr_scope_active and self.sr_last_confirmed_edge_time > 0:
+                if now - self.sr_last_confirmed_edge_time >= max(0.1, self.sr_scope_lost_seconds):
+                    self._stop_sr_breath_control()
+            return
+
+        self.sr_miss_count = 0
+        self.sr_edge_hit_streak += 1
+        confirm_frames = max(1, self.sr_scope_confirm_frames)
+        if self.sr_edge_hit_streak >= confirm_frames:
+            if not self.sr_scope_active:
+                tracker.reset()
+                self.sr_edge_hit_streak = 0
+                self.sr_scope_active = True
+                self.sr_last_confirmed_edge_time = now
+                return
+            self.sr_last_confirmed_edge_time = now
+        elif self.sr_scope_active:
+            return
+
+        if not self.sr_scope_active:
+            if now > self.sr_probe_until:
+                self._stop_sr_breath_control()
+            return
+
+        direction = -1.0 if self.sr_invert_y else 1.0
+        dx = 0
+        dy = int(round(direction * dy * self.sr_move_scale))
+        max_step = max(1, int(self.sr_max_step))
+        dy = max(-max_step, min(max_step, dy))
+        if dy:
+            ctypes.windll.user32.mouse_event(MOUSEEVENTF_MOVE, dx, dy, 0, 0)
+
     def _recoil_worker_loop(self):
+        sct = mss.mss() if mss else None
         while self._thread_running:
+            if sct is not None:
+                self._apply_sr_breath_control(sct)
+
             # 硬件状态修正（防止事件丢失导致的卡键）
             if self.is_firing and not self._is_left_button_pressed():
                 self.is_firing = False
@@ -327,7 +514,7 @@ class RecoilControlModule:
                 time.sleep(0.01)
                 continue
 
-            if self.is_enabled and self.is_firing and self.current_weapon and self.weapon_type != "dmr":
+            if self.is_enabled and self.is_firing and self.current_weapon and self.weapon_type not in ("dmr", "sr"):
                 t = max(0, time.time() - self.fire_start_time)
                 total = self._calculate_recoil_strength(t)
                 strength = int(round(total))
@@ -344,16 +531,16 @@ class RecoilControlModule:
 
                 time.sleep(self.recoil_delay)
             else:
-                time.sleep(0.01)
+                time.sleep(self.sr_track_interval if self.sr_breath_enabled else 0.01)
 
     def reload_config(self):
         self._load_config()
         if self.current_weapon:
             wp_data = self.weapon_configs.get(self.current_weapon, {})
-            self.recoil_curve = self._normalize_curve(wp_data.get("recoil_curve", wp_data.get("base", 0.0)), 0.0)
+            self.weapon_type = wp_data.get("type", "ar")
+            self.recoil_curve = [] if self.weapon_type == "sr" else self._normalize_curve(wp_data.get("recoil_curve", wp_data.get("base", 0.0)), 0.0)
             self.base_recoil = self.recoil_curve[0] if self.recoil_curve else 0.0
             self.auto_fire_enabled = wp_data.get("auto_fire", False)
-            self.weapon_type = wp_data.get("type", "ar")
             self.current_stance_multipliers = self.stance_multipliers.get(self.weapon_type,
                                                                           {"stand": 1.0, "squat": 0.8, "lie": 0.6})
             self._recalculate_multiplier()
@@ -361,5 +548,6 @@ class RecoilControlModule:
 
     def shutdown(self):
         self._thread_running = False
+        self._stop_sr_breath_control()
         if hasattr(self, 'mouse_listener'):
             self.mouse_listener.stop()
