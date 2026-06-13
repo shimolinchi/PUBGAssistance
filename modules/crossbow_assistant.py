@@ -7,9 +7,9 @@ import mss
 import json
 import os
 import ctypes
-from hair_tracker import HairTracker
+from modules.hair_tracker import HairTracker
 try:
-    from transparent_hud import TransparentHudWindow
+    from modules.transparent_hud import TransparentHudWindow
 except Exception:
     try:
         from transparent_hud import TransparentHudWindow
@@ -132,34 +132,16 @@ class CrossbowAssistant:
                 self.canvas.create_text(self.sw/2, warn_y, text="未检测到十字弩准星",
                                         fill="#E74C3C", font=("Microsoft YaHei", 15, "bold"), tags="crossbow_hud")
             return
+        if not self.calib_dists or not self.calib_drops_ratio:
+            if self.alpha_hud:
+                self.alpha_hud.clear()
+            return
+
         marker_half = 5
-        cross_half = 5
-        line_half = 30
-        text_offset = line_half + 8
+        text_offset = marker_half + 8
 
         if self.alpha_hud:
-            elements = [{
-                "type": "line",
-                "x1": cx - cross_half,
-                "y1": cy - cross_half,
-                "x2": cx + cross_half,
-                "y2": cy + cross_half,
-                "fill": "#000000",
-                "alpha": 255,
-                "width": 2,
-            }, {
-                "type": "line",
-                "x1": cx - cross_half,
-                "y1": cy + cross_half,
-                "x2": cx + cross_half,
-                "y2": cy - cross_half,
-                "fill": "#000000",
-                "alpha": 255,
-                "width": 2,
-            }]
-            if not self.calib_dists or not self.calib_drops_ratio:
-                self.alpha_hud.render_elements(elements)
-                return
+            elements = []
             for target in valid_targets:
                 dist = target['dist']
                 color = target['color']
@@ -170,11 +152,21 @@ class CrossbowAssistant:
                 target_y = cy + drop_px
                 elements.append({
                     "type": "line",
-                    "x1": cx - line_half,
-                    "y1": target_y,
-                    "x2": cx + line_half,
-                    "y2": target_y,
-                    "fill": color,
+                    "x1": cx - marker_half,
+                    "y1": target_y - marker_half,
+                    "x2": cx + marker_half,
+                    "y2": target_y + marker_half,
+                    "fill": "#000000",
+                    "alpha": 255,
+                    "width": 1,
+                })
+                elements.append({
+                    "type": "line",
+                    "x1": cx - marker_half,
+                    "y1": target_y + marker_half,
+                    "x2": cx + marker_half,
+                    "y2": target_y - marker_half,
+                    "fill": "#000000",
                     "alpha": 255,
                     "width": 1,
                 })
@@ -191,13 +183,6 @@ class CrossbowAssistant:
             self.alpha_hud.render_elements(elements)
             return
 
-        self.canvas.create_line(cx - cross_half, cy - cross_half, cx + cross_half, cy + cross_half,
-                                fill="#000000", width=2, tags="crossbow_hud")
-        self.canvas.create_line(cx - cross_half, cy + cross_half, cx + cross_half, cy - cross_half,
-                                fill="#000000", width=2, tags="crossbow_hud")
-        if not self.calib_dists or not self.calib_drops_ratio:
-            return
-
         for target in valid_targets:
             dist = target['dist']
             color = target['color']
@@ -209,9 +194,13 @@ class CrossbowAssistant:
             drop_px = drop_ratio * self.sh
             target_y = cy + drop_px
 
-            # 落点横线
-            self.canvas.create_line(cx - line_half, target_y, cx + line_half, target_y,
-                                    fill=color, width=1, tags="crossbow_hud")
+            # 落点黑色叉
+            self.canvas.create_line(cx - marker_half, target_y - marker_half,
+                                    cx + marker_half, target_y + marker_half,
+                                    fill="#000000", width=1, tags="crossbow_hud")
+            self.canvas.create_line(cx - marker_half, target_y + marker_half,
+                                    cx + marker_half, target_y - marker_half,
+                                    fill="#000000", width=1, tags="crossbow_hud")
             # 距离文字
             self.canvas.create_text(cx + text_offset, target_y, text=f"{dist:.0f}m", fill=color,
                                     font=("Consolas", 14, "bold"), anchor="w", tags="crossbow_hud")
